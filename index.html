@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>库存现货与产能看板（一期）</title>
+<meta name="theme-color" content="#2563eb">
+<link rel="manifest" href="manifest.webmanifest?v=20261014a">
+<link rel="icon" type="image/svg+xml" href="assets/icons/icon.svg">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="库存看板">
+<link rel="stylesheet" href="assets/css/style.css?v=20261014c">
+</head>
+<body>
+<div class="app">
+  <!-- ============ 侧边导航 ============ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="logo">
+      <span class="logo-mark">库</span>
+      <div>
+        <div class="logo-title">库存与产能看板</div>
+        <div class="logo-sub">一期 · 库存 / 欠货</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <div class="nav-group">看板</div>
+      <a class="nav-item active" data-view="stock"><span>▦</span>库存总览</a>
+      <a class="nav-item" data-view="semi"><span>◍</span>半成品</a>
+      <a class="nav-item" data-view="backorder"><span>✦</span>欠货跟踪</a>
+      <a class="nav-item" data-view="flow"><span>⇉</span>库存流水及数据对比</a>
+      <div class="nav-group">二期规划（占位）</div>
+      <a class="nav-item" data-view="replenish"><span>◷</span>备货建议</a>
+      <a class="nav-item" data-view="plan"><span>◆</span>月度生产规划</a>
+      <a class="nav-item disabled" data-view="schedule"><span>▤</span>排产分析</a>
+      <a class="nav-item" data-view="capacity"><span>⚙</span>产能档案</a>
+      <div class="nav-group">数据管理</div>
+      <a class="nav-item" data-view="import"><span>⇪</span>数据导入</a>
+      <a class="nav-item" data-view="material"><span>▤</span>物料主数据</a>
+      <a class="nav-item" data-view="backup"><span>⇄</span>备份与审计</a>
+    </nav>
+    <div class="sidebar-foot">
+      <button class="btn btn-ghost btn-block" id="btn-export-xlsx-nav">导出当前库存 Excel</button>
+    </div>
+  </aside>
+
+  <!-- ============ 主区域 ============ -->
+  <div class="main">
+    <header class="topbar">
+      <button class="btn btn-ghost only-mobile" id="btn-menu">☰</button>
+      <h1 class="page-title" id="page-title">库存总览</h1>
+      <div class="topbar-right">
+        <label class="date-picker">
+          查看日期
+          <select id="current-date"><option value="">（暂无快照）</option></select>
+        </label>
+        <button class="btn btn-primary" id="btn-backup-json">备份全部数据(JSON)</button>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- ===== 视图：库存总览 ===== -->
+      <section class="view active" id="view-stock">
+        <div class="kpi-grid">
+          <div class="kpi-card"><div class="kpi-label">成品 · 物料数</div><div class="kpi-value" id="kpi-finish-sku">–</div><div class="kpi-foot">所选查看日期快照</div></div>
+          <div class="kpi-card"><div class="kpi-label">成品 · 库存合计（箱）</div><div class="kpi-value" id="kpi-finish-qty">–</div><div class="kpi-foot">成品入库/发货/库存均以箱计</div></div>
+          <div class="kpi-card"><div class="kpi-label">本月累计入库（箱）</div><div class="kpi-value" id="kpi-finish-in">–</div><div class="kpi-foot">月初至查看日期累计</div></div>
+          <div class="kpi-card"><div class="kpi-label">本月累计出库（箱）</div><div class="kpi-value" id="kpi-finish-out">–</div><div class="kpi-foot">月初至查看日期累计</div></div>
+          <div class="kpi-card danger"><div class="kpi-label">负库存异常</div><div class="kpi-value" id="kpi-negative">–</div><div class="kpi-foot">需核对更正</div></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>成品库存数量趋势（箱）<span class="hint">默认近 30 天 · 库存为当日快照，入库/出库为当日实际发生量</span></h2>
+            <div class="legend">
+              <span class="dot finish"></span>库存数量
+              <span class="dot trend-in"></span>入库数量
+              <span class="dot trend-out"></span>出库数量
+            </div>
+            <div class="filter-bar">
+              <input type="search" id="trend-search" placeholder="筛选：编码/名称/系列/子分类">
+              <input type="date" id="trend-from" title="开始日期">
+              <span class="trend-sep">至</span>
+              <input type="date" id="trend-to" title="结束日期">
+            </div>
+          </div>
+          <div class="panel-body" id="trend-chart"><div class="empty">暂无历史快照，导入数据后自动生成趋势</div></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>库存结构<span class="hint">仅成品 · 按 产品系列 + 子分类 分组 · 点击分组可折叠 · 负库存标红</span></h2>
+            <div class="filter-bar">
+              <input type="search" id="stock-search" placeholder="筛选：编码/名称/系列/子分类">
+            </div>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap">
+              <table class="grid" id="stock-table">
+                <thead><tr>
+                  <th>物料编码</th><th>物料名称</th>
+                  <th>规格型号</th><th>箱规</th>
+                  <th class="num">初期库存</th><th class="num">入库数量</th><th class="num">出库数量</th><th class="num">库存数量</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== 视图：库存流水及数据对比（成品 / 半成品 子页） ===== -->
+      <section class="view" id="view-flow">
+        <div class="flow-tabs">
+          <span class="seg">
+            <button class="active" data-flowtab="finish">成品</button>
+            <button data-flowtab="semi">半成品</button>
+          </span>
+        </div>
+
+        <!-- ===== 子页：成品 ===== -->
+        <div class="flow-pane" id="flow-pane-finish">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>每日出入库流水<span class="hint">成品 · 当日实际入/出库（导入落库或按月累计差分推算）· 按日期降序 · 单位：箱</span></h2>
+            <div class="filter-bar">
+              <input type="search" id="flow-move-search" placeholder="筛选：编码 / 名称">
+              <label class="inline-label">日期 <input type="date" id="flow-move-date"></label>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="panels-2" style="margin-bottom:0">
+              <div class="panel" style="margin-bottom:0">
+                <div class="panel-head"><h2>每日入库数量报表（箱）</h2></div>
+                <div class="panel-body no-pad">
+                  <div class="table-wrap flow-scroll">
+                    <table class="grid" id="flow-in-table">
+                      <thead><tr><th>日期</th><th>物料编码</th><th>物料名称</th><th>规格型号</th><th class="num">入库数量</th></tr></thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+              <div class="panel" style="margin-bottom:0">
+                <div class="panel-head"><h2>每日出库数量报表（箱）</h2></div>
+                <div class="panel-body no-pad">
+                  <div class="table-wrap flow-scroll">
+                    <table class="grid" id="flow-out-table">
+                      <thead><tr><th>日期</th><th>物料编码</th><th>物料名称</th><th>规格型号</th><th class="num">出库数量</th></tr></thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>成品物料主数据与出入库对比<span class="hint">最新库存状态 · 入/出库为最新快照当月累计 · 上月出库=上月末快照累计 · 去年同期=去年同月快照累计 · 单位：箱 · 计划补货数量可手工录入</span></h2>
+            <div class="filter-bar">
+              <input type="search" id="flow-search" placeholder="筛选：编码/名称/系列/子分类">
+              <select id="flow-repl-filter">
+                <option value="">是否补货：全部</option>
+                <option value="yes">有补货计划</option>
+                <option value="no">无补货计划</option>
+              </select>
+            </div>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap">
+              <table class="grid" id="flow-table">
+                <thead><tr>
+                  <th>物料编码</th><th>物料名称</th><th>产品系列</th><th>子分类</th>
+                  <th>规格型号</th><th>箱规</th>
+                  <th class="num">初期库存</th><th class="num">入库数量</th><th class="num">出库数量</th>
+                  <th class="num">上月出库数量</th><th class="num">去年同期出库数量</th>
+                  <th class="num">库存数量</th><th class="num">计划补货数量</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        </div><!-- /子页：成品 -->
+
+        <!-- ===== 子页：半成品（结构同成品，单位取物料档案主单位，缺省公斤） ===== -->
+        <div class="flow-pane" id="flow-pane-semi" hidden>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>每日出入库流水<span class="hint">半成品 · 当日实际入/出库（导入落库或按月累计差分推算）· 按日期降序 · 单位取物料档案主单位（缺省公斤）</span></h2>
+            <div class="filter-bar">
+              <input type="search" id="flow-semi-move-search" placeholder="筛选：编码 / 名称">
+              <label class="inline-label">日期 <input type="date" id="flow-semi-move-date"></label>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="panels-2" style="margin-bottom:0">
+              <div class="panel" style="margin-bottom:0">
+                <div class="panel-head"><h2>每日入库数量报表</h2></div>
+                <div class="panel-body no-pad">
+                  <div class="table-wrap flow-scroll">
+                    <table class="grid" id="flow-semi-in-table">
+                      <thead><tr><th>日期</th><th>物料编码</th><th>物料名称</th><th>规格型号</th><th>单位</th><th class="num">入库数量</th></tr></thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+              <div class="panel" style="margin-bottom:0">
+                <div class="panel-head"><h2>每日出库数量报表</h2></div>
+                <div class="panel-body no-pad">
+                  <div class="table-wrap flow-scroll">
+                    <table class="grid" id="flow-semi-out-table">
+                      <thead><tr><th>日期</th><th>物料编码</th><th>物料名称</th><th>规格型号</th><th>单位</th><th class="num">出库数量</th></tr></thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>半成品物料主数据与出入库对比<span class="hint">最新库存状态 · 入/出库为最新快照当月累计 · 上月出库=上月末快照累计 · 去年同期=去年同月快照累计 · 单位取物料档案主单位（缺省公斤）· 计划补货数量可手工录入</span></h2>
+            <div class="filter-bar">
+              <input type="search" id="flow-semi-search" placeholder="筛选：编码/名称/系列/子分类">
+              <select id="flow-semi-repl-filter">
+                <option value="">是否补货：全部</option>
+                <option value="yes">有补货计划</option>
+                <option value="no">无补货计划</option>
+              </select>
+            </div>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap">
+              <table class="grid" id="flow-semi-table">
+                <thead><tr>
+                  <th>物料编码</th><th>物料名称</th><th>产品系列</th><th>子分类</th>
+                  <th>规格型号</th><th>单位</th>
+                  <th class="num">初期库存</th><th class="num">入库数量</th><th class="num">出库数量</th>
+                  <th class="num">上月出库数量</th><th class="num">去年同期出库数量</th>
+                  <th class="num">库存数量</th><th class="num">计划补货数量</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        </div><!-- /子页：半成品 -->
+      </section>
+
+      <!-- ===== 视图：半成品（库存 + 半成品↔成品对应维护） ===== -->
+      <section class="view" id="view-semi">
+        <div class="panel semi-panel">
+          <div class="semi-head">
+            <div class="semi-title">半成品 ↔ 成品对应维护（支持一对多）</div>
+            <div class="semi-topright">
+              <input type="search" id="semi-search" placeholder="筛选：编码/名称/成品">
+              <select id="semi-filter">
+                <option value="">全部</option>
+                <option value="一对多">一对多</option>
+                <option value="有关联">有关联</option>
+                <option value="无关联">无关联</option>
+                <option value="含已确认">含已确认</option>
+                <option value="待确认">待确认</option>
+                <option value="已锁定">已锁定</option>
+              </select>
+            </div>
+          </div>
+          <div class="semi-desc">
+            一个半成品可关联多个成品（点「＋」新增），每种成品各填一个单耗系数（做 1 箱成品耗用多少公斤半成品）。候选由名称模糊匹配生成，匹配度 &lt; 88% 务必人工复核。确认状态为「确认」即视为定案，不随库存数据更新而变化。
+          </div>
+
+          <div class="semi-toolbar">
+            <div class="semi-toolbar-left">
+              <button class="btn btn-primary btn-sm" id="btn-bom-lock">批量锁定已确认关系</button>
+              <button class="btn btn-sm" id="btn-bom-unlock">批量解锁</button>
+              <button class="btn btn-sm" id="btn-bom-export">导出对应关系</button>
+              <button class="btn btn-sm" id="btn-bom-import">导入对应关系</button>
+              <button class="btn btn-link" id="tpl-bom">下载导入模板</button>
+              <input type="file" id="bom-import-file" accept=".xlsx,.xls,.csv" hidden>
+            </div>
+            <div class="semi-stat" id="semi-stat">当前筛选 0 条</div>
+          </div>
+          <div class="semi-lock-tip">🔒 锁定后的对应关系不随数据更新、也不被「恢复出厂」覆盖，仅可人工解锁；这是保证关系长期稳定的关键开关。建议人工确认后即锁定。</div>
+
+          <div class="table-wrap">
+            <table class="grid semi-grid" id="semi-table">
+              <thead><tr>
+                <th>半成品编码</th><th>半成品名称</th><th class="num">库存</th><th>单位</th>
+                <th>关联成品（可多条）</th><th class="num">匹配度</th><th>确认结果</th><th>单耗（公斤/箱）</th><th>操作</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <datalist id="finish-list"></datalist>
+        </div>
+      </section>
+
+      <!-- ===== 视图：欠货跟踪 ===== -->
+      <section class="view" id="view-backorder">
+        <div class="kpi-grid">
+          <div class="kpi-card"><div class="kpi-label">未结清 · 物料数</div><div class="kpi-value" id="kpi-bo-items">–</div></div>
+          <div class="kpi-card"><div class="kpi-label">未结清 · 欠货数量合计</div><div class="kpi-value" id="kpi-bo-qty">–</div><div class="kpi-foot">成品以箱计</div></div>
+          <div class="kpi-card danger"><div class="kpi-label">超期未发（行）</div><div class="kpi-value" id="kpi-bo-overdue">–</div><div class="kpi-foot">需求日期早于今天</div></div>
+          <div class="kpi-card warn"><div class="kpi-label">待排产（行）</div><div class="kpi-value" id="kpi-bo-pending">–</div></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>欠货快照<span class="hint">（对照群内截图逐行录入）</span></h2>
+            <div class="head-note">录入口径：欠货数量以【件数(箱)】为准，主计数量 = 件数 × 每箱装量自动折算，仅作发货核对。<br>欠货按日期累积、不覆盖，发完后在下方明细把状态改为「已结清」。</div>
+          </div>
+          <div class="panel-body">
+            <form class="quick-form bo-snap-form" id="bo-form">
+              <div class="bo-ac-wrap">
+                <input type="text" name="物料编码" id="bo-code-input" placeholder="存在编码(13位)或名称关键字" autocomplete="off" required>
+                <div class="ac-list" id="bo-ac-list"></div>
+              </div>
+              <input type="number" name="欠货数量" placeholder="件数(箱)" step="0.01" min="0" required>
+              <input type="date" name="需求日期" required>
+              <input type="text" name="订单号" placeholder="订单号(可选)">
+              <button class="btn btn-primary" type="submit">加入欠货清单</button>
+            </form>
+            <div class="bo-form-info" id="bo-form-info">选中编码后自动带出产品名称、规格与每箱装量</div>
+          </div>
+        </div>
+
+        <div class="panels-2">
+          <div class="panel">
+            <div class="panel-head"><h2>欠货 Top 10<span class="hint">（按物料汇总，箱）</span></h2></div>
+            <div class="panel-body no-pad bo-side-scroll">
+              <table class="grid" id="bo-top-table">
+                <thead><tr><th class="col-code">编码</th><th class="col-name">名称</th><th class="num col-qty">欠货(箱)</th></tr></thead>
+                <tbody><tr><td colspan="3" class="empty">暂无欠货数据</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>超期未发提醒</h2></div>
+            <div class="panel-body no-pad bo-side-scroll" id="bo-overdue-box">
+              <div class="empty">没有已设需求日期且超期的欠货</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>欠货产品 · 库存对比<span class="hint">（全部欠货物料）</span></h2>
+            <div class="bo-cmp-summary" id="bo-cmp-summary"></div>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap">
+              <table class="grid" id="bo-cmp-table">
+                <thead><tr>
+                  <th>存货编码</th><th>产品名称</th><th>规格型号</th>
+                  <th class="num">欠货(箱)</th><th class="num">成品库存(箱)</th><th class="num">缺口(箱)</th><th>对比状态</th>
+                </tr></thead>
+                <tbody><tr><td colspan="7" class="empty">暂无欠货数据</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel-foot">完整列出所有未结清欠货产品的欠货箱数与成品库存箱数对比。红 = 缺货或无库存记录，橙 = 库存不足，绿 = 充足；「缺口」为还需补的箱数。排序：缺 → 不足 → 充足，同组内按缺口从大到小。</div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>欠货明细</h2>
+            <div class="filter-bar">
+              <input type="search" id="bo-search" placeholder="筛选：编码 / 名称">
+              <select id="bo-status-filter">
+                <option value="">全部状态</option>
+                <option value="待排产">待排产</option>
+                <option value="排产中">排产中</option>
+                <option value="可发货">可发货</option>
+                <option value="已结清">已结清</option>
+              </select>
+            </div>
+            <div class="head-note">双击单元格可修改；勾选行后可批量标记已结清或删除</div>
+          </div>
+          <div class="bo-batch-bar" id="bo-batch-bar" hidden>
+            <span id="bo-batch-info"></span>
+            <button class="btn btn-sm" id="bo-batch-clear" type="button">✓ 标记已结清</button>
+            <button class="btn btn-sm btn-danger-sm" id="bo-batch-del" type="button">删除选中</button>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap">
+              <table class="grid" id="bo-table">
+                <thead><tr>
+                  <th style="width:34px"><input type="checkbox" id="bo-check-all" title="全选"></th>
+                  <th>日期</th><th>编码</th><th>名称</th><th>规格</th>
+                  <th class="num">件数(箱)</th><th class="num">主计数量</th><th>单位</th>
+                  <th>需求日期</th><th>订单号</th><th>状态</th><th style="width:46px"></th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== 视图：数据导入 ===== -->
+      <section class="view" id="view-import">
+        <div class="panel">
+          <div class="panel-head"><h2>每日数据导入</h2>
+            <div class="filter-bar">
+              <label class="inline-label">导入日期 <input type="date" id="import-date"></label>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="import-grid">
+              <div class="dropzone" id="drop-finish">
+                <div class="dz-icon">📄</div>
+                <div class="dz-title">成品库库存报表</div>
+                <div class="dz-desc">拖入每日"成品库存清洗结果"Excel/CSV，或点击选择<br>列：产品编码/产品名称/规格型号/初期/入库/出库/库存数量（单位：箱）</div>
+                <input type="file" accept=".xlsx,.xls,.csv" hidden>
+              </div>
+              <div class="dropzone" id="drop-semi">
+                <div class="dz-icon">📄</div>
+                <div class="dz-title">半成品库库存报表</div>
+                <div class="dz-desc">拖入每日"半成品库存清洗结果"Excel/CSV，或点击选择<br>列含主计量单位（公斤/瓶），其余同成品</div>
+                <input type="file" accept=".xlsx,.xls,.csv" hidden>
+              </div>
+              <div class="dropzone dz-catalog" id="drop-catalog">
+                <div class="dz-icon">📚</div>
+                <div class="dz-title">产品清单（系列/子分类档案）</div>
+                <div class="dz-desc">拖入"产品清单.xlsx"更新产品系列/子分类（已内置 210 个产品，无需重复导入）<br>列：品牌系列/子分类/产品编码/产品名称/规格；箱规瓶、袋等按子分类自动判断</div>
+                <input type="file" accept=".xlsx,.xls,.csv" hidden>
+              </div>
+            </div>
+
+            <div class="import-options">
+              <span class="opt-label">导入模式：</span>
+              <label><input type="radio" name="import-mode" value="upsert" checked> 按物料编码更新（同码覆盖、新码追加）</label>
+              <label><input type="radio" name="import-mode" value="append"> 仅追加新编码（已存在的编码跳过）</label>
+              <label><input type="radio" name="import-mode" value="replace"> 清除当日后重新导入（仅清所选库存类型当日，历史不动）</label>
+            </div>
+
+            <div class="danger-zone">
+              <span>当日数据有误？</span>
+              <button class="btn btn-danger-sm" data-clear="成品">清除当日成品</button>
+              <button class="btn btn-danger-sm" data-clear="半成品">清除当日半成品</button>
+              <button class="btn btn-danger-sm" data-clear="欠货">清除当日欠货</button>
+              <span class="hint">二次确认后执行，历史日期自动保护</span>
+            </div>
+
+            <div class="template-links">
+              <span>模板与列名约定：</span>
+              <button class="btn btn-link" id="tpl-finish">下载成品报表模板</button>
+              <button class="btn btn-link" id="tpl-semi">下载半成品报表模板</button>
+              <button class="btn btn-link" id="tpl-bo">下载欠货清单模板(备用)</button>
+              <span class="hint">文件名含日期（如 _20261004_）时会自动识别导入日期；每个工作簿只读第一个 Sheet，"清洗报告"Sheet 自动忽略。</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>最近导入记录</h2></div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap">
+              <table class="grid" id="import-log-table">
+                <thead><tr><th>导入批次号</th><th>时间</th><th>类型</th><th>来源文件</th><th>新增</th><th>更新</th><th>跳过</th><th>详情</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== 视图：物料主数据 ===== -->
+      <section class="view" id="view-material">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>物料主数据<span class="hint">导入库存时会按编码自动建档 · 按 产品系列+子分类 分组（点击组行可折叠）· 行内仅 产品形态/包装形式/安全水位/目标库存天数 可直接编辑后点 ✓ 保存，其余字段点 ✎ 弹窗编辑</span></h2>
+            <div class="filter-bar">
+              <button class="btn btn-primary btn-sm" id="btn-mat-add">＋ 新增物料</button>
+              <div class="seg" id="mat-attr-filter">
+                <button data-v="" class="active">全部</button>
+                <button data-v="成品">成品</button>
+                <button data-v="半成品">半成品</button>
+              </div>
+              <input type="search" id="mat-search" placeholder="搜索编码 / 名称 / 系列…">
+            </div>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap">
+              <table class="grid edit" id="mat-table">
+                <thead><tr>
+                  <th class="col-code">物料编码</th><th class="col-name">物料名称</th><th>规格型号</th><th>箱规</th>
+                  <th>库存属性</th><th>产品形态</th><th>包装形式</th><th>主单位</th><th>安全水位</th><th>目标库存天数</th><th>操作</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== 视图：备份与审计 ===== -->
+      <section class="view" id="view-backup">
+        <div class="panel">
+          <div class="panel-head"><h2>数据备份与恢复</h2></div>
+          <div class="panel-body">
+            <p class="hint">数据保存在本机浏览器 IndexedDB 中。建议<strong>每日导入后备份一次</strong>；备份文件可拷贝到其他电脑恢复。</p>
+            <div class="btn-row">
+              <button class="btn btn-primary" id="btn-backup-json2">导出全部数据 (JSON)</button>
+              <button class="btn" id="btn-restore-json">导入备份文件 (JSON) 恢复</button>
+              <input type="file" id="restore-file" accept=".json" hidden>
+            </div>
+            <div class="btn-row">
+              <button class="btn" id="btn-export-xlsx">导出当前库存为 Excel（回群流转）</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>操作审计日志<span class="hint">记录每次导入 / 清除 / 恢复，便于追溯"今天数怎么变了"</span></h2>
+            <button class="btn btn-danger-sm" id="btn-clear-log">清空日志</button>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap">
+              <table class="grid" id="op-log-table">
+                <thead><tr><th>时间</th><th>批次号</th><th>操作类型</th><th>详情</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== 视图：备货建议（二期） ===== -->
+      <section class="view" id="view-replenish">
+        <div class="kpi-grid">
+          <div class="kpi-card"><div class="kpi-label">成品 SKU 数</div><div class="kpi-value" id="repl-kpi-sku">–</div><div class="kpi-foot">物料主数据中的成品</div></div>
+          <div class="kpi-card warn"><div class="kpi-label">需补货 SKU</div><div class="kpi-value" id="repl-kpi-need">–</div><div class="kpi-foot">建议补库量 &gt; 0</div></div>
+          <div class="kpi-card"><div class="kpi-label">建议补货总量（箱）</div><div class="kpi-value" id="repl-kpi-qty">–</div><div class="kpi-foot">按箱规取整后合计</div></div>
+          <div class="kpi-card danger"><div class="kpi-label">紧急 SKU</div><div class="kpi-value" id="repl-kpi-urgent">–</div><div class="kpi-foot">可用天数 &lt; 3 天</div></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>备货参数<span class="hint">日均消耗 = 近 N 天出库总量 ÷ N · 目标天数优先取物料主数据"目标库存天数"，未填用此默认值，填 0 = 该物料不参与备货</span></h2>
+          </div>
+          <div class="panel-body">
+            <div class="inline-form repl-cfg-form">
+              <label>消耗窗口天数 <input type="number" id="repl-cfg-window" min="1" max="365" step="1" style="width:80px"></label>
+              <label>默认目标库存天数 <input type="number" id="repl-cfg-days" min="1" max="365" step="1" style="width:80px"></label>
+              <div class="inline-form-actions"><button class="btn btn-primary btn-sm" id="repl-cfg-save">保存参数并重算</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>备货建议表<span class="hint">库存单位：箱 · 状态：可用天数&lt;3 紧急 / &lt;目标天数 预警 / 否则充足 · 同步为手动覆盖"计划补货数量"</span></h2>
+            <div class="filter-bar">
+              <input type="search" id="repl-search" placeholder="筛选：编码/名称/系列/子分类">
+              <span class="seg repl-status-filter">
+                <button class="active" data-st="">全部</button>
+                <button data-st="紧急">紧急</button>
+                <button data-st="预警">预警</button>
+                <button data-st="充足">充足</button>
+              </span>
+              <button class="btn btn-primary btn-sm" id="repl-sync">同步到主数据</button>
+            </div>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap">
+              <table class="grid" id="repl-table">
+                <thead><tr>
+                  <th>物料编码</th><th>物料名称</th><th>产品系列</th>
+                  <th class="num">当前库存(箱)</th><th class="num">日均消耗</th><th class="num">可用天数</th>
+                  <th class="num">目标天数</th><th class="num">缺口(箱)</th><th class="num">建议补库量(箱)</th>
+                  <th class="num">箱规</th><th class="num">手工计划值</th><th>状态</th><th>同步</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+      <!-- ===== 视图：月度生产规划（二期） ===== -->
+      <section class="view" id="view-plan">
+        <div class="kpi-grid">
+          <div class="kpi-card"><div class="kpi-label">成品 SKU 数</div><div class="kpi-value" id="plan-kpi-sku">–</div><div class="kpi-foot">物料主数据中的成品</div></div>
+          <div class="kpi-card"><div class="kpi-label">已确认计划</div><div class="kpi-value" id="plan-kpi-confirmed">–</div><div class="kpi-foot">经专人确认后生效</div></div>
+          <div class="kpi-card"><div class="kpi-label">计划生产总量（箱）</div><div class="kpi-value" id="plan-kpi-qty">–</div><div class="kpi-foot">含草稿与已确认</div></div>
+          <div class="kpi-card"><div class="kpi-label">当月实际入库（箱）</div><div class="kpi-value" id="plan-kpi-in">–</div><div class="kpi-foot">当月累计至最新快照</div></div>
+          <div class="kpi-card warn"><div class="kpi-label">综合达成率</div><div class="kpi-value" id="plan-kpi-rate">–</div><div class="kpi-foot">实际入库 ÷ 计划总量</div></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>月度生产计划表<span class="hint">推荐值 = 去年同期同月发货 ×（今年上月发货 ÷ 去年上月发货）· 生成后数量可改 · 确认后调整留痕 · 实际入库为当月累计 · 点「详情」看发货趋势与修改记录</span></h2>
+            <div class="filter-bar">
+              <label class="inline-label">计划月份 <input type="month" id="plan-month"></label>
+              <button class="btn btn-primary btn-sm" id="plan-generate">生成/刷新推荐值</button>
+              <label class="inline-label">确认人 <input type="text" id="plan-confirmer" placeholder="姓名" maxlength="20" style="width:90px"></label>
+              <input type="search" id="plan-search" placeholder="筛选：编码/名称/系列/子分类">
+              <span class="seg plan-status-filter">
+                <button class="active" data-st="">全部</button>
+                <button data-st="草稿">草稿</button>
+                <button data-st="已确认">已确认</button>
+              </span>
+            </div>
+          </div>
+          <div class="bo-batch-bar" id="plan-batch-bar" hidden>
+            <span id="plan-batch-info"></span>
+            <button class="btn btn-sm btn-primary" id="plan-batch-confirm" type="button">✓ 批量确认</button>
+            <button class="btn btn-sm" id="plan-batch-clear" type="button">取消选择</button>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap flow-scroll">
+              <table class="grid" id="plan-table">
+                <thead><tr>
+                  <th style="width:34px"><input type="checkbox" id="plan-check-all" title="全选"></th>
+                  <th>物料编码</th><th>物料名称</th><th>产品系列</th>
+                  <th class="num">去年同期发货</th><th class="num">上月发货</th><th class="num">月初结余</th><th class="num">趋势系数</th>
+                  <th class="num">推荐生产(箱)</th><th class="num">计划数量(箱)</th>
+                  <th class="num">实际入库(箱)</th><th class="num">差额(箱)</th><th class="num">达成率</th>
+                  <th>状态</th><th>操作</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel-foot">口径：月初结余取该月首条快照的期初库存；发货/入库均取该月最后一条成品快照的月累计值，选中月为当月时入库为「月初至最新快照」累计。差额 = 实际入库 − 计划数量（红=欠产，绿=超额）。确认前请先点「生成/刷新推荐值」。</div>
+        </div>
+      </section>
+      <section class="view" id="view-schedule"><div class="soon">
+        <h2>排产分析（二期）</h2>
+        <p>二期上线：欠货 + 备货缺口合并、按产品形态 × 线体有效班产测算需排批次、瓶颈工段标红、成品任务自动做半成品齐套检查（BOM 单层展开）。</p>
+      </div></section>
+      <section class="view" id="view-capacity">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>工段线体档案<span class="hint">5 条生产线：①整粒香辛料分装线 ②粉碎与固态复合线 ③半固态（炒制/调配）线 ④液态调味料线 ⑤分装线 · 工段按工艺路线节点划分 · 工段编号=生产线码-序号(如 L01-01)</span></h2>
+            <button class="btn btn-primary btn-sm" id="cap-ws-add">+ 新增工段</button>
+          </div>
+          <div class="panel-body">
+            <div class="inline-editor" id="cap-ws-editor" hidden></div>
+            <div class="table-wrap">
+              <table class="grid" id="cap-ws-table">
+                <thead><tr>
+                  <th>工段编号</th><th>工段名称</th><th>生产线</th>
+                  <th>工段序号</th><th>工艺路线</th><th>备注</th><th>更新时间</th><th class="op-col">操作</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>产能矩阵（借鉴值 / 实测值，默认每小时产量）<span class="hint">按生产线筛选（行随产线映射联动：原始香辛料→① 粉料/块料→② 酱料→③） · 行=工艺形态（产品形态-包装形式） 列=工段 · 双击单元格编辑 借鉴值/实测值/领料时间/调试换线清场时间/设备类型/备注</span></h2>
+            <div class="filter-bar">
+              <select id="cap-line-filter"></select>
+              <input type="search" id="cap-form-search" placeholder="筛选：工艺形态">
+            </div>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap matrix-wrap">
+              <table class="grid matrix" id="cap-matrix-table">
+                <thead><tr></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>每日实际产出<span class="hint">统一白班 · 产量按时间计量 · 现场补录产出 / 生产时间 / 换产清洗 · 按日期降序最近 200 条</span></h2>
+            <button class="btn btn-primary btn-sm" id="cap-out-add">+ 录入产出</button>
+          </div>
+          <div class="panel-body">
+            <div class="inline-editor" id="cap-out-editor" hidden></div>
+            <div class="table-wrap">
+              <table class="grid" id="cap-out-table">
+                <thead><tr>
+                  <th>日期</th><th>工段</th><th>产品形态</th>
+                  <th>物料编码</th><th class="num">产出数量(箱)</th>
+                  <th class="num">生产时间(小时)</th><th class="num">换产清洗次数</th>
+                  <th>备注</th><th class="op-col">操作</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- 导入报告弹窗 -->
+<div class="modal-mask" id="modal-mask" hidden>
+  <div class="modal">
+    <div class="modal-head"><h3 id="modal-title">导入报告</h3><button class="btn btn-ghost" id="modal-close">✕</button></div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-foot"><button class="btn btn-primary" id="modal-ok">知道了</button></div>
+  </div>
+</div>
+
+<!-- 物料主数据编辑弹窗（新增 / 详细编辑共用） -->
+<div class="modal-mask" id="mat-edit-mask" hidden>
+  <div class="modal">
+    <div class="modal-head"><h3 id="mat-edit-title">编辑物料</h3><button class="btn btn-ghost" id="mat-edit-close">✕</button></div>
+    <div class="modal-body">
+      <div class="mat-form">
+        <label>物料编码*<input type="text" id="me-物料编码" maxlength="40"></label>
+        <label>物料名称<input type="text" id="me-物料名称" maxlength="60"></label>
+        <label>产品系列<input type="text" id="me-产品系列" maxlength="40" placeholder="分组字段，如 红烧系列"></label>
+        <label>子分类(包装形态)<input type="text" id="me-子分类(包装形态)" maxlength="40" placeholder="分组字段"></label>
+        <label>规格型号<input type="text" id="me-规格型号" maxlength="60"></label>
+        <label>箱规<input type="text" id="me-箱规" maxlength="20"></label>
+        <label>库存属性<select id="me-库存属性"><option value="">未填</option><option>成品</option><option>半成品</option></select></label>
+        <label>产品形态<select id="me-产品形态"><option value="">未填</option><option>粉料</option><option>块料</option><option>酱料</option><option>原始香辛料</option></select></label>
+        <label>包装形式<input type="text" id="me-包装形式" maxlength="40" placeholder="如 玻璃瓶装"></label>
+        <label>主单位<input type="text" id="me-主单位" maxlength="10" placeholder="半成品缺省公斤"></label>
+        <label>安全水位<input type="text" id="me-安全水位" maxlength="20"></label>
+        <label>目标库存天数<input type="text" id="me-目标库存天数" maxlength="10" placeholder="空=用默认，0=不参与备货"></label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="mat-edit-cancel">取消</button>
+      <button class="btn btn-primary" id="mat-edit-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script src="assets/lib/xlsx.full.min.js?v=20261014a"></script>
+<script src="assets/js/db.js?v=20261014a"></script>
+<script src="assets/js/import.js?v=20261014a"></script>
+<script src="assets/js/backup.js?v=20261014a"></script>
+<script src="assets/js/capacity.js?v=20261014a"></script>
+<script src="assets/js/replenish.js?v=20261014a"></script>
+<script src="assets/js/plan.js?v=20261014d"></script>
+<script src="assets/js/app.js?v=20261014a"></script>
+<script>
+/* PWA：仅在 http(s) 下注册 Service Worker（file:// 双击打开时不注册） */
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  });
+}
+</script>
+</body>
+</html>
+
