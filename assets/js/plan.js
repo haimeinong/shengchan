@@ -460,20 +460,19 @@
         loadAll().then(renderAll);
       });
     }
-    var btn;
-    btn = $('#plan-confirmer');
-    if (btn) {
-      try { btn.value = localStorage.getItem('plan_confirmer') || ''; } catch (e) {}
-      btn.addEventListener('change', function () {
-        try { localStorage.setItem('plan_confirmer', btn.value.trim()); } catch (e) {}
+    var confirmer = $('#plan-confirmer');
+    if (confirmer) {
+      try { confirmer.value = localStorage.getItem('plan_confirmer') || ''; } catch (e) {}
+      confirmer.addEventListener('change', function () {
+        try { localStorage.setItem('plan_confirmer', confirmer.value.trim()); } catch (e) {}
       });
     }
-    btn = $('#plan-generate');
-    if (btn) btn.addEventListener('click', function () {
+    var generateBtn = $('#plan-generate');
+    if (generateBtn) generateBtn.addEventListener('click', function () {
       if (confirm('按同比趋势法为 ' + state.month + ' 生成/刷新推荐值？\n（已确认的计划不受影响，草稿中手工改过的数量保留）')) generate();
     });
-    btn = $('#plan-search');
-    if (btn) btn.addEventListener('input', function () { state.keyword = btn.value.trim(); renderTable(); });
+    var searchBox = $('#plan-search');
+    if (searchBox) searchBox.addEventListener('input', function () { state.keyword = searchBox.value.trim(); renderTable(); });
     $all('.plan-status-filter button').forEach(function (b) {
       b.addEventListener('click', function () {
         $all('.plan-status-filter button').forEach(function (x) { x.classList.toggle('active', x === b); });
@@ -481,13 +480,13 @@
         renderTable();
       });
     });
-    btn = $('#plan-batch-confirm');
-    if (btn) btn.addEventListener('click', batchConfirm);
-    btn = $('#plan-batch-clear');
-    if (btn) btn.addEventListener('click', function () { state.checked = {}; renderTable(); renderBatchBar(); });
-    btn = $('#plan-check-all');
-    if (btn) btn.addEventListener('change', function () {
-      var on = btn.checked;
+    var batchConfirmBtn = $('#plan-batch-confirm');
+    if (batchConfirmBtn) batchConfirmBtn.addEventListener('click', batchConfirm);
+    var batchClearBtn = $('#plan-batch-clear');
+    if (batchClearBtn) batchClearBtn.addEventListener('click', function () { state.checked = {}; renderTable(); renderBatchBar(); });
+    var checkAll = $('#plan-check-all');
+    if (checkAll) checkAll.addEventListener('change', function () {
+      var on = checkAll.checked;
       state.checked = {};
       if (on) $all('#plan-table tbody .plan-check').forEach(function (c) { state.checked[c.getAttribute('data-code')] = 1; });
       renderTable(); renderBatchBar();
