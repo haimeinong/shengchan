@@ -58,6 +58,7 @@
     month: curMonth(),  // 选中月份 YYYY-MM
     keyword: '',
     filterStatus: '',   // ''|草稿|已确认
+    showNoStock: false, // 是否显示"目标库存天数=0"的不备货产品
     checked: {},        // 勾选的物料编码
     expanded: ''        // 展开详情行的物料编码
   };
@@ -122,6 +123,12 @@
     else if (tyPrev != null) rec = Math.round(tyPrev);          /* 无去年同期参考上月 */
     if (rec != null && rec < 0) rec = 0;
     return { rec: rec, basis: { 去年同期: lySame, 今年上月: tyPrev, 去年上月: lyPrev, 系数: ratio } };
+  }
+
+  /* 目标库存天数填 0 = 不备货（与备货建议口径一致） */
+  function isNoStock(m) {
+    var raw = String(m.目标库存天数 == null ? '' : m.目标库存天数).trim();
+    return raw !== '' && +raw === 0;
   }
 
   /** 行展示数据：物料 + 计划记录 + 推荐 + 入库对比 */
@@ -242,6 +249,7 @@
     var tb = $('#plan-table tbody'); if (!tb) return;
     var kw = state.keyword.toLowerCase();
     var rows = state.materials.map(rowOf).filter(function (r) {
+      if (!state.showNoStock && isNoStock(r.mat)) return false;
       if (state.filterStatus === '草稿' && r.plan && r.plan.状态 === '已确认') return false;
       if (state.filterStatus === '已确认' && (!r.plan || r.plan.状态 !== '已确认')) return false;
       var m = r.mat;
@@ -479,6 +487,13 @@
         state.filterStatus = b.getAttribute('data-st') || '';
         renderTable();
       });
+    });
+    var noStockBtn = $('#plan-toggle-nostock');
+    if (noStockBtn) noStockBtn.addEventListener('click', function () {
+      state.showNoStock = !state.showNoStock;
+      noStockBtn.textContent = state.showNoStock ? '隐藏不备货产品' : '显示不备货产品';
+      noStockBtn.classList.toggle('btn-primary', state.showNoStock);
+      renderTable();
     });
     var batchConfirmBtn = $('#plan-batch-confirm');
     if (batchConfirmBtn) batchConfirmBtn.addEventListener('click', batchConfirm);
