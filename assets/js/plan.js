@@ -302,7 +302,18 @@
   function renderAll() { renderKpi(); renderTable(); renderBatchBar(); }
 
   /* ---------------- 导出 Excel ---------------- */
-  var EXPORT_COLS = ['物料编码', '物料名称', '产品系列', '子分类', '去年同期发货量', '上月发货量', '月初结余', '趋势系数', '计划数量', '实际入库', '产品形态', '包装形式'];
+  var EXPORT_COLS = ['物料编码', '物料名称', '规格型号', '产品系列', '子分类', '去年同期发货量', '上月发货量', '月初结余', '趋势系数', '计划数量', '实际入库', '产品形态', '包装形式'];
+  /* 独立窗口(PWA)模式下，游离元素的模拟点击可能被忽略，必须先把 <a> 挂到页面 DOM 再触发 */
+  function saveBlob(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { a.remove(); URL.revokeObjectURL(url); }, 1000);
+  }
   /* 导出范围 = 当前表格可见行（受关键字/状态/不备货开关影响），所见即所得 */
   function exportXlsx() {
     if (typeof XLSX === 'undefined') { toast('Excel 组件未加载，请刷新后重试', 'err'); return; }
@@ -320,6 +331,7 @@
       return {
         物料编码: r.code,
         物料名称: r.mat.物料名称 || '',
+        规格型号: r.mat.规格型号 || '',
         产品系列: r.mat.产品系列 || '',
         子分类: r.mat['子分类(包装形态)'] || '',
         去年同期发货量: r.basis.去年同期 == null ? '' : r.basis.去年同期,
@@ -332,14 +344,20 @@
         包装形式: r.mat.包装形式 || ''
       };
     });
-    var ws = XLSX.utils.json_to_sheet(data, { header: EXPORT_COLS });
-    ws['!cols'] = EXPORT_COLS.map(function (c) {
-      return { wch: c === '物料名称' ? 22 : c === '物料编码' ? 16 : c === '去年同期发货量' ? 14 : 11 };
-    });
-    var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '月度生产计划');
-    XLSX.writeFile(wb, '月度生产计划_' + state.month + '.xlsx');
-    toast('已导出 ' + rows.length + ' 条：月度生产计划_' + state.month + '.xlsx', 'ok');
+    try {
+      var ws = XLSX.utils.json_to_sheet(data, { header: EXPORT_COLS });
+      ws['!cols'] = EXPORT_COLS.map(function (c) {
+        return { wch: c === '物料名称' ? 22 : c === '规格型号' ? 16 : c === '物料编码' ? 16 : c === '去年同期发货量' ? 14 : 11 };
+      });
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '月度生产计划');
+      var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      var name = '月度生产计划_' + state.month + '.xlsx';
+      saveBlob(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), name);
+      toast('已导出 ' + rows.length + ' 条：' + name + '（若未弹保存提示，请到系统"下载"文件夹查看）', 'ok');
+    } catch (err) {
+      toast('导出失败：' + (err && err.message ? err.message : err), 'err');
+    }
   }
 
   /* ---------------- 写操作 ---------------- */
