@@ -301,6 +301,47 @@
 
   function renderAll() { renderKpi(); renderTable(); renderBatchBar(); }
 
+  /* ---------------- 导出 Excel ---------------- */
+  var EXPORT_COLS = ['物料编码', '物料名称', '产品系列', '子分类', '去年同期发货量', '上月发货量', '月初结余', '趋势系数', '计划数量', '实际入库', '产品形态', '包装形式'];
+  /* 导出范围 = 当前表格可见行（受关键字/状态/不备货开关影响），所见即所得 */
+  function exportXlsx() {
+    if (typeof XLSX === 'undefined') { toast('Excel 组件未加载，请刷新后重试', 'err'); return; }
+    var kw = state.keyword.toLowerCase();
+    var rows = state.materials.map(rowOf).filter(function (r) {
+      if (!state.showNoStock && isNoStock(r.mat)) return false;
+      if (state.filterStatus === '草稿' && r.plan && r.plan.状态 === '已确认') return false;
+      if (state.filterStatus === '已确认' && (!r.plan || r.plan.状态 !== '已确认')) return false;
+      var m = r.mat;
+      if (kw && [r.code, m.物料名称, m.产品系列, m['子分类(包装形态)']].join(' ').toLowerCase().indexOf(kw) < 0) return false;
+      return true;
+    });
+    if (!rows.length) { toast('当前筛选条件下没有可导出的数据', 'warn'); return; }
+    var data = rows.map(function (r) {
+      return {
+        物料编码: r.code,
+        物料名称: r.mat.物料名称 || '',
+        产品系列: r.mat.产品系列 || '',
+        子分类: r.mat['子分类(包装形态)'] || '',
+        去年同期发货量: r.basis.去年同期 == null ? '' : r.basis.去年同期,
+        上月发货量: r.basis.今年上月 == null ? '' : r.basis.今年上月,
+        月初结余: r.openQty == null ? '' : r.openQty,
+        趋势系数: r.basis.系数 == null ? '' : Math.round(r.basis.系数 * 100) / 100,
+        计划数量: r.planQty == null ? '' : r.planQty,
+        实际入库: r.inQty == null ? '' : r.inQty,
+        产品形态: r.mat.产品形态 || '',
+        包装形式: r.mat.包装形式 || ''
+      };
+    });
+    var ws = XLSX.utils.json_to_sheet(data, { header: EXPORT_COLS });
+    ws['!cols'] = EXPORT_COLS.map(function (c) {
+      return { wch: c === '物料名称' ? 22 : c === '物料编码' ? 16 : c === '去年同期发货量' ? 14 : 11 };
+    });
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '月度生产计划');
+    XLSX.writeFile(wb, '月度生产计划_' + state.month + '.xlsx');
+    toast('已导出 ' + rows.length + ' 条：月度生产计划_' + state.month + '.xlsx', 'ok');
+  }
+
   /* ---------------- 写操作 ---------------- */
   function newPlanRow(code, rec, basis) {
     var ts = nowStr();
@@ -488,6 +529,8 @@
         renderTable();
       });
     });
+    var exportBtn = $('#plan-export');
+    if (exportBtn) exportBtn.addEventListener('click', exportXlsx);
     var noStockBtn = $('#plan-toggle-nostock');
     if (noStockBtn) noStockBtn.addEventListener('click', function () {
       state.showNoStock = !state.showNoStock;
