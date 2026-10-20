@@ -512,3 +512,10 @@ table.grid.edit td input:focus, table.grid.edit td select:focus { border-color: 
 #plan-batch-bar[hidden] { display: none; }
 #plan-month { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12.5px; }
 
+/* 半成品需求参考 */
+#sd-month { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12.5px; }
+#sd-table thead th { z-index: 2; }
+#sd-table .sd-row-short td { background: #fff7f7; }
+#sd-table .plan-detail-row table.grid { background: #fff; }
+#sd-table .sd-toggle { white-space: nowrap; }
+
