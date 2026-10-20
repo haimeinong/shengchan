@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="库存看板">
-<link rel="stylesheet" href="assets/css/style.css?v=20261014c">
+<link rel="stylesheet" href="assets/css/style.css?v=20261020a">
 </head>
 <body>
 <div class="app">
@@ -33,6 +33,7 @@
       <div class="nav-group">二期规划（占位）</div>
       <a class="nav-item" data-view="replenish"><span>◷</span>备货建议</a>
       <a class="nav-item" data-view="plan"><span>◆</span>月度生产规划</a>
+      <a class="nav-item" data-view="semidemand"><span>◈</span>半成品需求参考</a>
       <a class="nav-item disabled" data-view="schedule"><span>▤</span>排产分析</a>
       <a class="nav-item" data-view="capacity"><span>⚙</span>产能档案</a>
       <div class="nav-group">数据管理</div>
@@ -634,6 +635,59 @@
           <div class="panel-foot">口径：月初结余取该月首条快照的期初库存；发货/入库均取该月最后一条成品快照的月累计值，选中月为当月时入库为「月初至最新快照」累计。差额 = 实际入库 − 计划数量（红=欠产，绿=超额）。确认前请先点「生成/刷新推荐值」。</div>
         </div>
       </section>
+      <!-- ===== 视图：半成品需求参考（二期） ===== -->
+      <section class="view" id="view-semidemand">
+        <div class="kpi-grid">
+          <div class="kpi-card"><div class="kpi-label">涉及半成品</div><div class="kpi-value" id="sd-kpi-semi">–</div><div class="kpi-foot">存在需求的半成品数</div></div>
+          <div class="kpi-card"><div class="kpi-label">合计需求量</div><div class="kpi-value" id="sd-kpi-demand">–</div><div class="kpi-foot">全部半成品合计（各主单位）</div></div>
+          <div class="kpi-card danger"><div class="kpi-label">库存不足半成品</div><div class="kpi-value" id="sd-kpi-short">–</div><div class="kpi-foot">需求量 &gt; 当前库存</div></div>
+          <div class="kpi-card"><div class="kpi-label">参与计算的成品</div><div class="kpi-value" id="sd-kpi-fin">–</div><div class="kpi-foot">已确认且有对应关系</div></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>半成品需求对比<span class="hint">仅取「已确认」生产计划 · 仅用「已确认/已锁定」对应关系 · 多个成品共用同一半成品已按半成品汇总 · 展开主行看各成品来源 · 单位取半成品主单位（缺省公斤）</span></h2>
+            <div class="filter-bar">
+              <label class="inline-label">计划月份 <input type="month" id="sd-month"></label>
+              <span class="seg" id="sd-basis">
+                <button data-b="net" class="active" title="需求量 = （计划数量 − 实际入库数量）× 单耗；已入库≥计划则记为 0">扣除已入库</button>
+                <button data-b="plan" title="需求量 = 计划数量 × 单耗（不看已入库）">按计划全额</button>
+              </span>
+              <input type="search" id="sd-search" placeholder="筛选：半成品 / 成品 编码 / 名称">
+              <button class="btn btn-sm" id="sd-toggle-zero" type="button" title="默认隐藏「计划数量为0」的成品明细，点击后展开显示该半成品能制作的全部成品">显示计划为0的成品</button>
+              <button class="btn btn-sm" id="sd-export" type="button" title="按当前筛选结果导出 Excel">导出 Excel</button>
+            </div>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap flow-scroll">
+              <table class="grid" id="sd-table">
+                <thead><tr>
+                  <th>半成品编码</th><th>半成品名称</th><th>单位</th>
+                  <th class="num">当前库存</th><th class="num">合计需求量</th><th class="num">缺口</th>
+                  <th>状态</th><th class="num">关联成品</th><th>操作</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel-foot">口径：待产数量 = 计划数量 − 实际入库数量（已入库≥计划则记为 0，即不再计算半成品用量）；需求量 = 待产数量 × 单耗（公斤/箱）；多个成品共用同一半成品时按半成品汇总合计。缺口 = 合计需求量 − 半成品当前库存（取最新半成品快照），库存充足时显示「—」。单耗缺失的对应关系标「待补充」并计入关联成品数，但不计入需求量。成品来源默认只显示「计划数量&gt;0」的成品，点「显示计划为0的成品」可查看该半成品能制作的全部成品。</div>
+        </div>
+
+        <!-- 提示：已确认计划但未维护半成品对应关系 -->
+        <div class="panel" id="sd-missing-panel" hidden>
+          <div class="panel-head">
+            <h2>计划成品未维护半成品对应关系（<span id="sd-missing-count">0</span> 项）<span class="hint">以下成品已有「已确认」生产计划，但尚未维护「已确认/已锁定」的半成品对应关系，其半成品需求量无法测算，建议日常到「半成品管理」补充对应关系与单耗</span></h2>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap flow-scroll">
+              <table class="grid" id="sd-missing-table">
+                <thead><tr><th>成品编码</th><th>成品名称</th><th>产品系列</th><th class="num">计划数量(箱)</th><th>提示</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
       <section class="view" id="view-schedule"><div class="soon">
         <h2>排产分析（二期）</h2>
         <p>二期上线：欠货 + 备货缺口合并、按产品形态 × 线体有效班产测算需排批次、瓶颈工段标红、成品任务自动做半成品齐套检查（BOM 单层展开）。</p>
@@ -747,7 +801,8 @@
 <script src="assets/js/capacity.js?v=20261014a"></script>
 <script src="assets/js/replenish.js?v=20261014a"></script>
 <script src="assets/js/plan.js?v=20261018b"></script>
-<script src="assets/js/app.js?v=20261014a"></script>
+<script src="assets/js/semidemand.js?v=20261020b"></script>
+<script src="assets/js/app.js?v=20261020a"></script>
 <script>
 /* PWA：仅在 http(s) 下注册 Service Worker（file:// 双击打开时不注册） */
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
