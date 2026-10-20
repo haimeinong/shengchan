@@ -1453,7 +1453,7 @@
   }
   function closeModal() { $('#modal-mask').hidden = true; }
 
-  var TITLES = { stock: '库存总览', semi: '半成品管理', backorder: '欠货跟踪', flow: '库存流水及数据对比', import: '数据导入', material: '物料主数据', backup: '备份与审计', replenish: '备货建议', plan: '月度生产规划', schedule: '排产分析', capacity: '产能档案' };
+  var TITLES = { stock: '库存总览', semi: '半成品管理', backorder: '欠货跟踪', flow: '库存流水及数据对比', import: '数据导入', material: '物料主数据', backup: '备份与审计', replenish: '备货建议', plan: '月度生产规划', semidemand: '半成品需求参考', schedule: '排产分析', capacity: '产能档案' };
 
   function switchView(v) {
     state.view = v;
@@ -1467,6 +1467,7 @@
     if (v === 'capacity' && window.CapacityView) CapacityView.render();
     if (v === 'replenish' && window.ReplenishView) ReplenishView.render();
     if (v === 'plan' && window.PlanView) PlanView.render();
+    if (v === 'semidemand' && window.SemiDemandView) SemiDemandView.render();
   }
 
   function afterChange() { return reload().then(renderAll); }
@@ -1524,6 +1525,7 @@
     if (window.CapacityView) CapacityView.init();
     if (window.ReplenishView) ReplenishView.init();
     if (window.PlanView) PlanView.init();
+    if (window.SemiDemandView) SemiDemandView.init();
 
     seedCatalog().then(function (seeded) {
       return reload().then(function () {
