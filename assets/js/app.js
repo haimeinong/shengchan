@@ -20,6 +20,12 @@
     if (n == null || isNaN(n)) return '0';
     return (Math.round(n * 100) / 100).toLocaleString('zh-CN');
   }
+
+  /* 输入防抖：连续输入时延迟 ms 毫秒后才执行，避免每次按键都全量重算渲染 */
+  function debounce(fn, ms) {
+    var t;
+    return function () { clearTimeout(t); t = setTimeout(fn, ms); };
+  }
   function todayStr() { return Importer.todayStr(); }
   function toast(msg, type) {
     var el = document.createElement('div');
@@ -32,6 +38,7 @@
 
   /* ---------------- 数据装载 ---------------- */
   function reload() {
+    movesCache = {};   /* 数据重载后，流水推算缓存失效，下次渲染时重建 */
     return Promise.all([DB.all('material'), DB.all('stock'), DB.all('backorder'), DB.all('oplog'), DB.all('bom')])
       .then(function (r) {
         state.materials = r[0];
@@ -44,14 +51,26 @@
       });
   }
 
+  /* 视图懒渲染：数据变化后只立即重绘"当前视图"，其余视图在切换到它时再渲染。
+     renderedView 记录哪些视图的 DOM 与当前 state 是一致的，避免每次数据变更都全量重建 8 个视图。 */
+  var renderedView = {};
+
+  function renderView(v) {
+    switch (v) {
+      case 'stock': renderStock(); break;
+      case 'semi': renderSemi(); break;
+      case 'backorder': renderBackorder(); break;
+      case 'flow': renderFlow(); break;
+      case 'import': renderImportLog(); break;
+      case 'material': renderMaterial(); break;
+      case 'backup': renderOpLog(); break;
+    }
+    renderedView[v] = true;
+  }
+
   function renderAll() {
-    renderStock();
-    renderSemi();
-    renderBackorder();
-    renderFlow();
-    renderMaterial();
-    renderImportLog();
-    renderOpLog();
+    renderedView = {};        /* state 已重新装载，全部视图标记为待渲染 */
+    renderView(state.view);   /* 只画当前可见视图 */
   }
 
   /* ================================================================
@@ -194,6 +213,20 @@
     return byCode;
   }
 
+  /* 推算结果缓存：按库存类型缓存分组排序+差分结果（byCode）与数据最新日期（maxDate）。
+   * 只在数据重载（reload）后重建，避免每次渲染/筛选都对全量历史重复分组排序推算。 */
+  var movesCache = {};
+  function dailyMovesCached(stockType) {
+    var c = movesCache[stockType];
+    if (!c) {
+      var paneStocks = state.stocks.filter(function (s) { return s.库存类型 === stockType; });
+      var maxDate = '';
+      paneStocks.forEach(function (s) { if (s.日期 > maxDate) maxDate = s.日期; });
+      c = movesCache[stockType] = { byCode: dailyMovesByCode(paneStocks), maxDate: maxDate };
+    }
+    return c;
+  }
+
   function renderTrend() {
     var box = $('#trend-chart');
     if (!box) return;
@@ -223,7 +256,7 @@
     }
 
     /* 按物料分组（全量快照）：先算出每条快照的当日入库/出库，避免区间截断导致差分失真 */
-    var byCode = dailyMovesByCode(finishStocks);
+    var byCode = dailyMovesCached('成品').byCode;
 
     var sumStock = {}, sumIn = {}, sumOut = {}, hasData = false;
     Object.keys(byCode).forEach(function (code) {
@@ -293,7 +326,20 @@
   /* 流水视图当前子页：finish=成品 / semi=半成品 */
   var flowTab = 'finish';
 
-  function renderFlow() { renderFlowPane('finish'); renderFlowPane('semi'); }
+  /* 流水行数保护：默认仅显示近 31 天（以数据最新日期为锚点）；
+   * 筛选命中编码数不超过 FLOW_LIFT_CODES 个时自动放开限制，展示全部历史流水 */
+  var FLOW_DEFAULT_DAYS = 31, FLOW_LIFT_CODES = 5;
+
+  /* 单次渲染行数上限：无论筛选结果多少，DOM 一次最多插入 FLOW_PAGE 行，其余点"显示更多"追加。
+   * 保证主线程不会被上万行 innerHTML 长时间阻塞（这是长时间卡顿/无响应的直接原因之一）。 */
+  var FLOW_PAGE = 300;
+  var flowLimit = { finish: FLOW_PAGE, semi: FLOW_PAGE };
+  var flowSig = { finish: '', semi: '' };
+  var flowReplLimit = { finish: FLOW_PAGE, semi: FLOW_PAGE };
+  var flowReplSig = { finish: '', semi: '' };
+
+  /* 只渲染当前可见子页；隐藏的子页不计算不渲染，切换子页时再补渲染 */
+  function renderFlow() { renderFlowPane(flowTab); }
 
   /** 成品/半成品流水对比渲染（type: 'finish' | 'semi'）。
    *  成品计量单位固定为箱；半成品取物料档案"主单位"（缺省公斤），流水表多一列"单位"。 */
@@ -304,8 +350,8 @@
     var inTbl = isSemi ? '#flow-semi-in-table tbody' : '#flow-in-table tbody';
     var outTbl = isSemi ? '#flow-semi-out-table tbody' : '#flow-out-table tbody';
 
-    var paneStocks = state.stocks.filter(function (s) { return s.库存类型 === stockType; });
-    var byCode = dailyMovesByCode(paneStocks);
+    var flowCache = dailyMovesCached(stockType);
+    var byCode = flowCache.byCode;
 
     /* 半成品计量单位：物料档案主单位 > 快照单位 > 默认公斤；成品恒为箱 */
     function unitOf(code, snap) {
@@ -318,14 +364,32 @@
     var moveKw = ($(idPrefix + '-move-search') ? $(idPrefix + '-move-search').value : '').trim().toLowerCase();
     var moveDate = $(idPrefix + '-move-date') ? $(idPrefix + '-move-date').value : '';
 
+    /* 筛选命中的编码集合：命中数少（查具体产品）时放开日期限制看全部历史，
+       命中数多（或不筛选）时默认仅近 FLOW_DEFAULT_DAYS 天，避免行数随数据累积无限膨胀 */
+    var hitCodes = {};
+    Object.keys(byCode).forEach(function (code) {
+      var m = state.matMap[code] || {};
+      if (moveKw && [code, m.物料名称 || ''].join(' ').toLowerCase().indexOf(moveKw) < 0) return;
+      hitCodes[code] = 1;
+    });
+    var moveFrom = '';
+    if (!moveDate && flowCache.maxDate && Object.keys(hitCodes).length > FLOW_LIFT_CODES) {
+      moveFrom = shiftDate(flowCache.maxDate, -(FLOW_DEFAULT_DAYS - 1));
+    }
+
+    /* 筛选条件变化时回到第一页，避免沿用上次"显示更多"后的大行数 */
+    var sig = moveKw + '|' + moveDate;
+    if (flowSig[type] !== sig) { flowSig[type] = sig; flowLimit[type] = FLOW_PAGE; }
+    var limit = flowLimit[type];
+
     function moveRows(field) {
       var rows = [];
-      Object.keys(byCode).forEach(function (code) {
+      Object.keys(hitCodes).forEach(function (code) {
         var m = state.matMap[code] || {};
         var name = m.物料名称 || '', spec = m.规格型号 || '';
-        if (moveKw && [code, name].join(' ').toLowerCase().indexOf(moveKw) < 0) return;
         byCode[code].forEach(function (s) {
-          if (moveDate && s.日期 !== moveDate) return;
+          if (moveDate) { if (s.日期 !== moveDate) return; }
+          else if (moveFrom && s.日期 < moveFrom) return;
           var v = field === '__din' ? s.__din : s.__dout;
           if (!v) return;   /* 当日无发生量不显示 */
           rows.push({ d: s.日期, code: code, name: name, spec: spec, unit: unitOf(code, s), v: v });
@@ -340,16 +404,34 @@
       var tb = $(tbodySel);
       if (!tb) return;
       var cols = isSemi ? 6 : 5;
-      if (!rows.length) { tb.innerHTML = '<tr><td colspan="' + cols + '" class="empty">' + emptyText + '</td></tr>'; return; }
+      if (!rows.length) {
+        tb.innerHTML = '<tr><td colspan="' + cols + '" class="empty">' + (moveFrom ? '近 ' + FLOW_DEFAULT_DAYS + ' 天' : '') + emptyText + '</td></tr>';
+        return;
+      }
       var total = 0;
-      var html = rows.map(function (r) {
-        total += r.v;
+      rows.forEach(function (r) { total += r.v; });          /* 合计按全部结果算，不受分页影响 */
+      var shown = rows.slice(0, limit);
+      var html = shown.map(function (r) {
         var unitCell = isSemi ? '<td>' + esc(r.unit) + '</td>' : '';
         return '<tr><td>' + r.d + '</td><td class="code">' + esc(r.code) + '</td><td>' + esc(r.name) + '</td>'
           + '<td>' + esc(r.spec) + '</td>' + unitCell + '<td class="num">' + fmtNum(r.v) + '</td></tr>';
       }).join('');
       html += '<tr class="group-row"><td colspan="' + (cols - 1) + '">合计</td><td class="num">' + fmtNum(total) + '</td></tr>';
+      if (rows.length > shown.length) {
+        html += '<tr class="more-row"><td colspan="' + cols + '">'
+          + '<button type="button" class="btn flow-more" style="width:100%">显示更多（已显示 '
+          + shown.length + ' / 共 ' + rows.length + ' 行）</button></td></tr>';
+      }
+      if (moveFrom) {
+        html += '<tr><td colspan="' + cols + '" class="empty">仅显示近 ' + FLOW_DEFAULT_DAYS + ' 天流水，上方筛选具体产品（≤' + FLOW_LIFT_CODES + ' 个编码）可查看全部历史</td></tr>';
+      }
       tb.innerHTML = html;
+      $all('.flow-more', tb).forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          flowLimit[type] += FLOW_PAGE;
+          renderFlowPane(type);
+        });
+      });
     }
     moveTable(inTbl, moveRows('__din'), '暂无入库流水');
     moveTable(outTbl, moveRows('__dout'), '暂无出库流水');
@@ -358,11 +440,11 @@
     var kw = ($(idPrefix + '-search') ? $(idPrefix + '-search').value : '').trim().toLowerCase();
     var replF = $(idPrefix + '-repl-filter') ? $(idPrefix + '-repl-filter').value : '';
 
-    /** 每物料最新一条该库存类型快照 */
+    /** 每物料最新一条该库存类型快照（byCode 内已按日期升序，取末位即可，无需再全表扫描） */
     var latestSnap = {};
-    paneStocks.forEach(function (s) {
-      var cur = latestSnap[s.物料编码];
-      if (!cur || s.日期 > cur.日期) latestSnap[s.物料编码] = s;
+    Object.keys(byCode).forEach(function (code) {
+      var arr = byCode[code];
+      if (arr.length) latestSnap[code] = arr[arr.length - 1];
     });
 
     /** 某物料在某月"月末最后一条快照"的累计字段值 */
@@ -391,7 +473,13 @@
     if (!tb) return;
     if (!list.length) { tb.innerHTML = '<tr><td colspan="13" class="empty">暂无符合条件的' + stockType + '物料</td></tr>'; return; }
 
-    tb.innerHTML = list.map(function (m) {
+    /* 对比表同样限制单次渲染行数（每行含输入框，物料多时整表重建很重）；
+       筛选条件变化时回到第一页。其余行点"显示更多"分批补上。 */
+    var sig2 = kw + '|' + replF;
+    if (flowReplSig[type] !== sig2) { flowReplSig[type] = sig2; flowReplLimit[type] = FLOW_PAGE; }
+    var replShown = list.slice(0, flowReplLimit[type]);
+
+    var html = replShown.map(function (m) {
       var code = m.物料编码;
       var snap = latestSnap[code] || null;
       var stock = snap ? +snap.数量 : null;
@@ -422,7 +510,17 @@
         + '<td class="num"><input type="number" min="0" step="1" class="flow-repl-input" value="' + esc(replVal) + '" placeholder="—"></td></tr>';
     }).join('');
 
-    /* 计划补货数量：手工编辑，写入物料档案（经验判断，非系统推算；成品/半成品通用） */
+    if (list.length > replShown.length) {
+      html += '<tr class="more-row"><td colspan="13"><button type="button" class="btn flow-more" style="width:100%">显示更多（已显示 '
+        + replShown.length + ' / 共 ' + list.length + ' 个物料）</button></td></tr>';
+    }
+    tb.innerHTML = html;
+    $all('.flow-more', tb).forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        flowReplLimit[type] += FLOW_PAGE;
+        renderFlowPane(type);
+      });
+    });
     $all('.flow-repl-input', tb).forEach(function (inp) {
       inp.addEventListener('change', function () {
         var tr = inp.closest('tr');
@@ -451,6 +549,7 @@
     var f = $('#flow-pane-finish'), s = $('#flow-pane-semi');
     if (f) f.hidden = flowTab !== 'finish';
     if (s) s.hidden = flowTab !== 'semi';
+    renderFlowPane(flowTab);   /* 切到哪个子页才渲染哪个（renderFlow 只渲染当前可见子页） */
   }
 
   /* ================================================================
@@ -1468,6 +1567,8 @@
     if (v === 'replenish' && window.ReplenishView) ReplenishView.render();
     if (v === 'plan' && window.PlanView) PlanView.render();
     if (v === 'semidemand' && window.SemiDemandView) SemiDemandView.render();
+    /* 主视图按需渲染：只有数据变化过（renderedView 无标记）才重建，避免每次切菜单都重绘 */
+    if (!renderedView[v]) renderView(v);
   }
 
   function afterChange() { return reload().then(renderAll); }
@@ -1493,14 +1594,15 @@
     $('#trend-to').addEventListener('change', renderTrend);
     $('#bo-status-filter').addEventListener('change', renderBackorder);
     $('#bo-search').addEventListener('input', renderBackorder);
-    $('#flow-move-search').addEventListener('input', renderFlow);
+    /* 流水页筛选：搜索框加 300ms 防抖，避免每次按键都全量重算+重建表格 */
+    $('#flow-move-search').addEventListener('input', debounce(renderFlow, 300));
     $('#flow-move-date').addEventListener('change', renderFlow);
-    $('#flow-search').addEventListener('input', renderFlow);
+    $('#flow-search').addEventListener('input', debounce(renderFlow, 300));
     $('#flow-repl-filter').addEventListener('change', renderFlow);
     /* 流水视图：半成品子页筛选 + 成品/半成品切换 */
-    $('#flow-semi-move-search').addEventListener('input', renderFlow);
+    $('#flow-semi-move-search').addEventListener('input', debounce(renderFlow, 300));
     $('#flow-semi-move-date').addEventListener('change', renderFlow);
-    $('#flow-semi-search').addEventListener('input', renderFlow);
+    $('#flow-semi-search').addEventListener('input', debounce(renderFlow, 300));
     $('#flow-semi-repl-filter').addEventListener('change', renderFlow);
     $all('#view-flow .flow-tabs button').forEach(function (b) {
       b.addEventListener('click', function () { switchFlowTab(b.getAttribute('data-flowtab')); });
@@ -1508,7 +1610,7 @@
   }
 
   /* ---------------- 启动 ---------------- */
-  window.BO_VER = '20261007j';
+  window.BO_VER = '20261022b';
   function init() {
     $('#import-date').value = todayStr();
     initNav();
@@ -1535,8 +1637,13 @@
       });
     });
 
-    // 恢复后整页刷新；IndexedDB 跨标签同步
-    window.addEventListener('focus', function () { reload().then(renderAll); });
+    // 长时间离开页面再回来时才重新读取数据（防多标签数据陈旧）；
+    // 不再监听 window focus —— 每次切换窗口都全量读写会让日志/快照累积后卡死。
+    var hiddenAt = 0;
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) { hiddenAt = Date.now(); return; }
+      if (hiddenAt && Date.now() - hiddenAt > 60000) { hiddenAt = 0; reload().then(renderAll); }
+    });
   }
 
   document.addEventListener('DOMContentLoaded', init);
