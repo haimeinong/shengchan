@@ -610,6 +610,7 @@
               </span>
               <button class="btn btn-sm" id="plan-toggle-nostock" type="button" title="物料主数据中「目标库存天数」填 0 的产品不参与备货，默认不显示">显示不备货产品</button>
               <button class="btn btn-sm" id="plan-export" type="button" title="按当前筛选结果导出 Excel">导出 Excel</button>
+              <button class="btn btn-sm" id="plan-export-history" type="button" title="按年月范围导出每个产品的月度出库历史">导出历史出库</button>
             </div>
           </div>
           <div class="bo-batch-bar" id="plan-batch-bar" hidden>
@@ -765,6 +766,22 @@
   </div>
 </div>
 
+<!-- 历史出库导出弹窗 -->
+<div class="modal-mask" id="plan-hist-mask" hidden>
+  <div class="modal">
+    <div class="modal-head"><h3>导出历史出库</h3><button class="btn btn-ghost" id="plan-hist-close">✕</button></div>
+    <div class="modal-body">
+      <p class="hint">按月末快照累计的"出库数量"取各产品月出库历史，行=物料，列=月份。</p>
+      <label class="inline-label">起始月份 <input type="month" id="plan-hist-from"></label>
+      <label class="inline-label">结束月份 <input type="month" id="plan-hist-to"></label>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="plan-hist-cancel">取消</button>
+      <button class="btn btn-primary" id="plan-hist-ok">导出</button>
+    </div>
+  </div>
+</div>
+
 <!-- 物料主数据编辑弹窗（新增 / 详细编辑共用） -->
 <div class="modal-mask" id="mat-edit-mask" hidden>
   <div class="modal">
@@ -800,7 +817,7 @@
 <script src="assets/js/backup.js?v=20261014a"></script>
 <script src="assets/js/capacity.js?v=20261014a"></script>
 <script src="assets/js/replenish.js?v=20261014a"></script>
-<script src="assets/js/plan.js?v=20261018b"></script>
+<script src="assets/js/plan.js?v=20261027b"></script>
 <script src="assets/js/semidemand.js?v=20261020b"></script>
 <script src="assets/js/app.js?v=20261022b"></script>
 <script>
