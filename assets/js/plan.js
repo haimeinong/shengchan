@@ -302,7 +302,7 @@
   function renderAll() { renderKpi(); renderTable(); renderBatchBar(); }
 
   /* ---------------- 历史出库导出 ---------------- */
-  /* 打开弹窗并预填默认范围：快照数据里最早月 ~ 最晚月 */
+  /* 打开弹窗并预填默认范围：快照数据里最早月~最晚月；无快照则用当前月±6个月 */
   function openHistoryModal() {
     var mask = $('#plan-hist-mask'); if (!mask) return;
     var allMonths = {};
@@ -313,10 +313,15 @@
       });
     });
     var ymList = Object.keys(allMonths).sort();
-    if (!ymList.length) { toast('暂无库存快照数据，无法导出', 'warn'); return; }
     var fromInput = $('#plan-hist-from'), toInput = $('#plan-hist-to');
-    fromInput.value = ymList[0];
-    toInput.value = ymList[ymList.length - 1];
+    if (ymList.length) {
+      fromInput.value = ymList[0];
+      toInput.value = ymList[ymList.length - 1];
+    } else {
+      /* 无快照数据：默认范围=当前月往前6个月 ~ 当前月 */
+      toInput.value = state.month;
+      fromInput.value = addMonths(state.month, -6);
+    }
     mask.hidden = false;
   }
   function closeHistoryModal() { var m = $('#plan-hist-mask'); if (m) m.hidden = true; }
@@ -694,6 +699,7 @@
   global.PlanView = {
     init: init,
     render: function () { loadAll().then(renderAll); },
-    reload: function () { return loadAll().then(renderAll); }
+    reload: function () { return loadAll().then(renderAll); },
+    openHistoryModal: openHistoryModal
   };
 })(window);
