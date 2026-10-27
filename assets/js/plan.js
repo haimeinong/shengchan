@@ -301,6 +301,91 @@
 
   function renderAll() { renderKpi(); renderTable(); renderBatchBar(); }
 
+  /* ---------------- 历史出库导出 ---------------- */
+  /* 打开弹窗并预填默认范围：快照数据里最早月 ~ 最晚月 */
+  function openHistoryModal() {
+    var mask = $('#plan-hist-mask'); if (!mask) return;
+    var allMonths = {};
+    Object.keys(state.byCode).forEach(function (code) {
+      (state.byCode[code] || []).forEach(function (s) {
+        var ym = (s.日期 || '').slice(0, 7);
+        if (/^\d{4}-\d{2}$/.test(ym)) allMonths[ym] = 1;
+      });
+    });
+    var ymList = Object.keys(allMonths).sort();
+    if (!ymList.length) { toast('暂无库存快照数据，无法导出', 'warn'); return; }
+    var fromInput = $('#plan-hist-from'), toInput = $('#plan-hist-to');
+    fromInput.value = ymList[0];
+    toInput.value = ymList[ymList.length - 1];
+    mask.hidden = false;
+  }
+  function closeHistoryModal() { var m = $('#plan-hist-mask'); if (m) m.hidden = true; }
+
+  function exportHistoryXlsx(fromYm, toYm) {
+    if (typeof XLSX === 'undefined') { toast('Excel 组件未加载，请刷新后重试', 'err'); return; }
+    if (!/^\d{4}-\d{2}$/.test(fromYm) || !/^\d{4}-\d{2}$/.test(toYm)) {
+      toast('月份格式不正确（应为 YYYY-MM）', 'warn'); return;
+    }
+    if (fromYm > toYm) { toast('起始月份不能晚于结束月份', 'warn'); return; }
+
+    /* 1) 预构建查找表：code -> { ym -> 月末快照出库数量 }，避免每个物料每月扫描一次 */
+    var codeYmQty = {};
+    Object.keys(state.byCode).forEach(function (code) {
+      var ymMap = {};
+      (state.byCode[code] || []).forEach(function (s) {
+        var ym = (s.日期 || '').slice(0, 7);
+        if (ym >= fromYm && ym <= toYm) {
+          ymMap[ym] = (+s.出库数量 || 0);   /* 快照按日期升序，同月后覆盖 = 取月末累计 */
+        }
+      });
+      codeYmQty[code] = ymMap;
+    });
+
+    /* 2) 生成月份列头 */
+    var months = [];
+    var cur = fromYm;
+    while (cur <= toYm) { months.push(cur); cur = addMonths(cur, 1); }
+
+    /* 3) 导出数据 = 全部成品物料（受当前筛选：keyword / showNoStock / filterStatus） */
+    var kw = state.keyword.toLowerCase();
+    var rows = state.materials.filter(function (m) {
+      if (!state.showNoStock && isNoStock(m)) return false;
+      if (kw && [m.物料编码, m.物料名称, m.产品系列, m['子分类(包装形态)']].join(' ').toLowerCase().indexOf(kw) < 0) return false;
+      return true;
+    }).map(function (m) {
+      var qmap = codeYmQty[m.物料编码] || {};
+      var tail = months.map(function (ym) {
+        var v = qmap[ym];
+        return (v == null || v === '') ? '' : v;   /* 无快照月份留空 */
+      });
+      return [m.物料编码 || '', m.物料名称 || '', m.规格型号 || '', m.产品系列 || '', m['子分类(包装形态)'] || ''].concat(tail);
+    });
+
+    if (!rows.length) { toast('当前筛选条件下没有可导出的数据', 'warn'); return; }
+
+    try {
+      var headers = ['物料编码', '物料名称', '规格型号', '产品系列', '子分类'].concat(months);
+      var aoa = [headers].concat(rows);
+      var ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = headers.map(function (h) {
+        if (h === '物料名称') return { wch: 22 };
+        if (h === '规格型号' || h === '子分类') return { wch: 16 };
+        if (h === '物料编码') return { wch: 16 };
+        if (h === '产品系列') return { wch: 14 };
+        return { wch: 10 };
+      });
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '历史出库');
+      var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      var name = '历史出库_' + fromYm + '_至_' + toYm + '.xlsx';
+      saveBlob(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), name);
+      closeHistoryModal();
+      toast('已导出 ' + rows.length + ' 条物料 × ' + months.length + ' 个月：' + name + '（若未弹保存提示，请到系统"下载"文件夹查看）', 'ok');
+    } catch (err) {
+      toast('导出失败：' + (err && err.message ? err.message : err), 'err');
+    }
+  }
+
   /* ---------------- 导出 Excel ---------------- */
   var EXPORT_COLS = ['物料编码', '物料名称', '规格型号', '产品系列', '子分类', '去年同期发货量', '上月发货量', '月初结余', '趋势系数', '计划数量', '实际入库', '产品形态', '包装形式'];
   /* 独立窗口(PWA)模式下，游离元素的模拟点击可能被忽略，必须先把 <a> 挂到页面 DOM 再触发 */
@@ -549,6 +634,17 @@
     });
     var exportBtn = $('#plan-export');
     if (exportBtn) exportBtn.addEventListener('click', exportXlsx);
+    /* 历史出库弹窗事件 */
+    var histBtn = $('#plan-export-history');
+    if (histBtn) histBtn.addEventListener('click', openHistoryModal);
+    var histClose = $('#plan-hist-close'), histCancel = $('#plan-hist-cancel');
+    if (histClose) histClose.addEventListener('click', closeHistoryModal);
+    if (histCancel) histCancel.addEventListener('click', closeHistoryModal);
+    var histOk = $('#plan-hist-ok');
+    if (histOk) histOk.addEventListener('click', function () {
+      var f = $('#plan-hist-from').value, t = $('#plan-hist-to').value;
+      exportHistoryXlsx(f, t);
+    });
     var noStockBtn = $('#plan-toggle-nostock');
     if (noStockBtn) noStockBtn.addEventListener('click', function () {
       state.showNoStock = !state.showNoStock;
