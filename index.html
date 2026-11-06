@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="库存看板">
-<link rel="stylesheet" href="assets/css/style.css?v=20261020a">
+<link rel="stylesheet" href="assets/css/style.css?v=20261106a">
 </head>
 <body>
 <div class="app">
@@ -557,8 +557,8 @@
         </div>
 
         <div class="panel">
-          <div class="panel-head">
-            <h2>备货建议表<span class="hint">库存单位：箱 · 状态：可用天数&lt;3 紧急 / &lt;目标天数 预警 / 否则充足 · 同步为手动覆盖"计划补货数量"</span></h2>
+          <div class="panel-head repl-head">
+            <h2>备货建议表<span class="hint">可用&lt;3天 紧急 / 不足目标 预警</span></h2>
             <div class="filter-bar">
               <input type="search" id="repl-search" placeholder="筛选：编码/名称/系列/子分类">
               <span class="seg repl-status-filter">
@@ -566,6 +566,11 @@
                 <button data-st="紧急">紧急</button>
                 <button data-st="预警">预警</button>
                 <button data-st="充足">充足</button>
+              </span>
+              <span class="seg repl-manual-filter">
+                <button class="active" data-manual="">全部计划值</button>
+                <button data-manual="has">有手工值</button>
+                <button data-manual="none">无手工值</button>
               </span>
               <button class="btn btn-primary btn-sm" id="repl-sync">同步到主数据</button>
             </div>
@@ -816,7 +821,7 @@
 <script src="assets/js/import.js?v=20261014a"></script>
 <script src="assets/js/backup.js?v=20261014a"></script>
 <script src="assets/js/capacity.js?v=20261014a"></script>
-<script src="assets/js/replenish.js?v=20261014a"></script>
+<script src="assets/js/replenish.js?v=20261106a"></script>
 <script src="assets/js/plan.js?v=20261027c"></script>
 <script src="assets/js/semidemand.js?v=20261020b"></script>
 <script src="assets/js/app.js?v=20261022b"></script>
