@@ -43,6 +43,7 @@
     cfg: { consume_window: 30, safety_days: 7 },
     rows: [],        // 计算结果（供同步与排产复用）
     filterStatus: '', // ''|紧急|预警|充足
+    filterManual: '', // ''|has(有手工计划值)|none(无手工计划值)
     keyword: ''
   };
 
@@ -176,6 +177,8 @@
     var kw = state.keyword.toLowerCase();
     var list = state.rows.filter(function (r) {
       if (state.filterStatus && r.status !== state.filterStatus) return false;
+      if (state.filterManual === 'has' && r.manual == null) return false;
+      if (state.filterManual === 'none' && r.manual != null) return false;
       if (kw && (r.code + ' ' + r.name + ' ' + r.series + ' ' + r.sub).toLowerCase().indexOf(kw) < 0) return false;
       return true;
     });
@@ -243,6 +246,13 @@
       b.addEventListener('click', function () {
         $all('.repl-status-filter button').forEach(function (x) { x.classList.toggle('active', x === b); });
         state.filterStatus = b.getAttribute('data-st') || '';
+        renderTable();
+      });
+    });
+    $all('.repl-manual-filter button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        $all('.repl-manual-filter button').forEach(function (x) { x.classList.toggle('active', x === b); });
+        state.filterManual = b.getAttribute('data-manual') || '';
         renderTable();
       });
     });
