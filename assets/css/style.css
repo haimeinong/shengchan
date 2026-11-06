@@ -478,6 +478,16 @@ table.grid.edit td input:focus, table.grid.edit td select:focus { border-color: 
 .repl-sync-tag { font-size: 12px; color: #15803d; }
 .repl-sync-tag.pending { color: #b45309; }
 .repl-cfg-form label input { text-align: right; }
+/* 备货建议表：桌面端标题与筛选组强制同行，空间不足时说明文字省略，避免筛选组换行 */
+@media (min-width: 1000px) {
+  .repl-head { flex-wrap: nowrap; }
+  .repl-head h2 { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; white-space: nowrap; }
+  .repl-head h2 .hint { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .repl-head .filter-bar { flex-wrap: nowrap; flex-shrink: 0; gap: 5px; }
+  .repl-head .filter-bar input[type=search] { min-width: 150px; flex: 0 1 198px; }
+  .repl-head .filter-bar .seg button { padding: 6px 8px; }
+  .repl-head .filter-bar .btn { padding: 7px 10px; }
+}
 #repl-table .table-wrap { max-height: 520px; overflow-y: auto; }
 #repl-table thead th { position: sticky; top: 0; z-index: 2; background: #f8fafc; }
 
