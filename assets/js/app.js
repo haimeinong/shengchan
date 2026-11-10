@@ -1351,6 +1351,43 @@
    * ================================================================ */
   var MAT_FIELDS = ['物料编码', '物料名称', '产品系列', '子分类(包装形态)', '规格型号', '箱规', '库存属性', '产品形态', '包装形式', '主单位', '安全水位', '目标库存天数'];
 
+  /* ---------------- 物料主数据导出 Excel（按当前筛选条件） ---------------- */
+  function exportMaterialXLSX() {
+    var kw = $('#mat-search').value.trim().toLowerCase();
+    var list = state.materials.slice().sort(function (a, b) { return a.物料编码.localeCompare(b.物料编码); });
+    if (matAttrFilter) list = list.filter(function (m) { return (m.库存属性 || '') === matAttrFilter; });
+    if (kw) list = list.filter(function (m) {
+      return [m.物料编码, m.物料名称, m.产品系列, m['子分类(包装形态)'], m.产品形态, m.包装形式].join(' ').toLowerCase().indexOf(kw) >= 0;
+    });
+    if (!list.length) { toast('当前筛选下没有物料可导出', 'warn'); return; }
+    /* 列顺序：先 MAT_FIELDS 固定顺序，再追加每行中出现过的其它字段（如 计划补货数量、补货同步时间、工艺组、备注 等） */
+    var headers = MAT_FIELDS.slice();
+    list.forEach(function (m) {
+      Object.keys(m).forEach(function (k) {
+        if (headers.indexOf(k) < 0) headers.push(k);
+      });
+    });
+    var rows = list.map(function (m) {
+      var o = {};
+      headers.forEach(function (k) { o[k] = (m[k] == null || m[k] === '') ? '' : m[k]; });
+      return o;
+    });
+    var ws = XLSX.utils.json_to_sheet(rows, { header: headers });
+    ws['!cols'] = headers.map(function (c) {
+      if (c === '物料名称') return { wch: 22 };
+      if (c === '规格型号' || c === '产品系列' || c === '子分类(包装形态)') return { wch: 16 };
+      if (c === '备注') return { wch: 20 };
+      return { wch: 11 };
+    });
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '物料主数据');
+    var d = new Date();
+    function _p(n) { return String(n).padStart(2, '0'); }
+    var stamp = d.getFullYear() + _p(d.getMonth() + 1) + _p(d.getDate()) + '_' + _p(d.getHours()) + _p(d.getMinutes());
+    XLSX.writeFile(wb, '物料主数据_' + stamp + '.xlsx');
+    toast('已导出 ' + rows.length + ' 条物料主数据', 'ok');
+  }
+
   /* 库存属性快速筛选：''=全部 / 成品 / 半成品 */
   var matAttrFilter = '';
 
@@ -1484,6 +1521,7 @@
 
   function initMaterial() {
     $('#btn-mat-add').addEventListener('click', function () { openMatEditor(null); });
+    $('#btn-mat-export').addEventListener('click', exportMaterialXLSX);
     $('#mat-edit-close').addEventListener('click', closeMatEditor);
     $('#mat-edit-cancel').addEventListener('click', closeMatEditor);
     $('#mat-edit-mask').addEventListener('click', function (e) { if (e.target === this) closeMatEditor(); });
