@@ -481,6 +481,7 @@
             <h2>物料主数据<span class="hint">导入库存时会按编码自动建档 · 按 产品系列+子分类 分组（点击组行可折叠）· 行内仅 产品形态/包装形式/安全水位/目标库存天数 可直接编辑后点 ✓ 保存，其余字段点 ✎ 弹窗编辑</span></h2>
             <div class="filter-bar">
               <button class="btn btn-primary btn-sm" id="btn-mat-add">＋ 新增物料</button>
+              <button class="btn btn-sm" id="btn-mat-export">导出 Excel</button>
               <div class="seg" id="mat-attr-filter">
                 <button data-v="" class="active">全部</button>
                 <button data-v="成品">成品</button>
@@ -824,7 +825,7 @@
 <script src="assets/js/replenish.js?v=20261106a"></script>
 <script src="assets/js/plan.js?v=20261027c"></script>
 <script src="assets/js/semidemand.js?v=20261020b"></script>
-<script src="assets/js/app.js?v=20261022b"></script>
+<script src="assets/js/app.js?v=20261110a"></script>
 <script>
 /* PWA：仅在 http(s) 下注册 Service Worker（file:// 双击打开时不注册） */
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
