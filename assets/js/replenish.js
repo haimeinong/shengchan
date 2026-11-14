@@ -3,7 +3,7 @@
  * 算法：近 N 天出库总量/N = 日均消耗 → 可用天数 = 当前库存/日均消耗
  *       目标库存 = 日均消耗 × 目标天数(物料主数据"目标库存天数"，未填用全局参数，填 0 = 不参与备货)
  *       缺口 = max(0, 目标库存 - 当前库存)
- *       建议补库量 = 按箱规向上取整
+ *       建议补库量 = 缺口向上取整到整箱（库存/出库均以箱计量，箱规不参与取整）
  * 同步策略：手动同步——点「同步到主数据」+ 二次确认后才覆盖物料主数据"计划补货数量"
  * 参数存 mdl_replenish_cfg：consume_window(消耗窗口天数,默认30) / safety_days(默认目标天数,默认7)
  * ============================================================ */
@@ -134,16 +134,15 @@
       var availDays = dailyAvg > 0 ? stock / dailyAvg : Infinity;
       var targetStock = dailyAvg * targetDays;
       var gap = excluded ? 0 : Math.max(0, targetStock - stock);
-      /* 箱规存的是文本（如 "100包/箱"，import.js 生成），用 parseInt 取数字部分；无法解析按 1 */
-      var boxNum = parseInt(String(m.箱规 || ''), 10);
-      var box = boxNum > 0 ? boxNum : 1;
-      var suggested = gap > 0 ? Math.ceil(gap / box) * box : 0;
+      /* 成品库存/出库均以"箱"计量，箱规是每箱内装量（如 100包/箱），不参与缺口取整；
+         建议补库量 = 缺口向上取整到整箱 */
+      var suggested = gap > 0 ? Math.ceil(gap) : 0;
       var status = excluded ? '不备货' : (availDays === Infinity ? '充足' : (availDays < 3 ? '紧急' : (availDays < targetDays ? '预警' : '充足')));
       return {
         code: code, name: m.物料名称 || '', series: m.产品系列 || '', sub: m['子分类(包装形态)'] || '',
         spec: m.规格型号 || '', form: m.产品形态 || '', pack: m.包装形式 || '',
         stock: stock, dailyAvg: dailyAvg, availDays: availDays, targetDays: targetDays,
-        gap: gap, box: box, boxText: String(m.箱规 || '').trim(), suggested: suggested, status: status,
+        gap: gap, boxText: String(m.箱规 || '').trim(), suggested: suggested, status: status,
         manual: (m.计划补货数量 === '' || m.计划补货数量 == null) ? null : +m.计划补货数量,
         syncTime: m.补货同步时间 || '',
         synced: (m.计划补货数量 != null && m.计划补货数量 !== '' && +m.计划补货数量 === suggested && !!m.补货同步时间)
