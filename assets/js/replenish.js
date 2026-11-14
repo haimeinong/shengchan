@@ -134,13 +134,16 @@
       var availDays = dailyAvg > 0 ? stock / dailyAvg : Infinity;
       var targetStock = dailyAvg * targetDays;
       var gap = excluded ? 0 : Math.max(0, targetStock - stock);
-      var box = +m.箱规 > 0 ? +m.箱规 : 1;
+      /* 箱规存的是文本（如 "100包/箱"，import.js 生成），用 parseInt 取数字部分；无法解析按 1 */
+      var boxNum = parseInt(String(m.箱规 || ''), 10);
+      var box = boxNum > 0 ? boxNum : 1;
       var suggested = gap > 0 ? Math.ceil(gap / box) * box : 0;
       var status = excluded ? '不备货' : (availDays === Infinity ? '充足' : (availDays < 3 ? '紧急' : (availDays < targetDays ? '预警' : '充足')));
       return {
         code: code, name: m.物料名称 || '', series: m.产品系列 || '', sub: m['子分类(包装形态)'] || '',
+        spec: m.规格型号 || '', form: m.产品形态 || '', pack: m.包装形式 || '',
         stock: stock, dailyAvg: dailyAvg, availDays: availDays, targetDays: targetDays,
-        gap: gap, box: box, suggested: suggested, status: status,
+        gap: gap, box: box, boxText: String(m.箱规 || '').trim(), suggested: suggested, status: status,
         manual: (m.计划补货数量 === '' || m.计划补货数量 == null) ? null : +m.计划补货数量,
         syncTime: m.补货同步时间 || '',
         synced: (m.计划补货数量 != null && m.计划补货数量 !== '' && +m.计划补货数量 === suggested && !!m.补货同步时间)
@@ -172,16 +175,20 @@
     return '<span class="' + cls + '">' + st + '</span>';
   }
 
-  function renderTable() {
-    var tb = $('#repl-table tbody'); if (!tb) return;
+  function filteredRows() {
     var kw = state.keyword.toLowerCase();
-    var list = state.rows.filter(function (r) {
+    return state.rows.filter(function (r) {
       if (state.filterStatus && r.status !== state.filterStatus) return false;
       if (state.filterManual === 'has' && r.manual == null) return false;
       if (state.filterManual === 'none' && r.manual != null) return false;
       if (kw && (r.code + ' ' + r.name + ' ' + r.series + ' ' + r.sub).toLowerCase().indexOf(kw) < 0) return false;
       return true;
     });
+  }
+
+  function renderTable() {
+    var tb = $('#repl-table tbody'); if (!tb) return;
+    var list = filteredRows();
     if (!list.length) {
       tb.innerHTML = '<tr><td colspan="13" class="empty">无符合条件的成品（请先在数据导入中导入成品库存快照）</td></tr>';
       return;
@@ -200,7 +207,7 @@
         + '<td class="num">' + r.targetDays + '</td>'
         + '<td class="num">' + (r.gap > 0 ? fmtNum(Math.round(r.gap * 100) / 100) : '—') + '</td>'
         + '<td class="num repl-suggested">' + (r.suggested > 0 ? fmtNum(r.suggested) : '—') + '</td>'
-        + '<td class="num">' + (r.box > 1 ? r.box : '—') + '</td>'
+        + '<td class="num">' + (r.boxText ? esc(r.boxText) : '—') + '</td>'
         + '<td class="num muted">' + (r.manual == null ? '—' : fmtNum(r.manual)) + '</td>'
         + '<td>' + statusBadge(r.status) + '</td>'
         + '<td>' + syncCell + '</td></tr>';
@@ -235,11 +242,68 @@
     }).catch(function (e) { toast('同步失败：' + (e.message || e), 'err'); });
   }
 
-  /* ---------------- 初始化与导出 ---------------- */
+  /* ---------------- 导出 Excel ---------------- */
+  /* 下载 Blob：独立窗口(PWA)模式下，游离元素的模拟点击可能被忽略，必须先把 <a> 挂到页面 DOM 再触发 */
+  function saveBlob(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { a.remove(); URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function exportXLSX() {
+    if (typeof XLSX === 'undefined') { toast('Excel 组件未加载，请刷新后重试', 'err'); return; }
+    var list = filteredRows();
+    if (!list.length) { toast('当前筛选下没有可导出的数据', 'warn'); return; }
+    var headers = ['物料编码', '物料名称', '产品系列', '当前库存(箱)', '日均消耗', '可用天数', '目标天数',
+      '缺口(箱)', '建议补库量(箱)', '箱规', '手工计划值', '状态', '同步',
+      '规格型号', '产品形态', '包装形式'];
+    var rows = list.map(function (r) {
+      return {
+        '物料编码': r.code, '物料名称': r.name, '产品系列': r.series,
+        '当前库存(箱)': Math.round(r.stock * 100) / 100,
+        '日均消耗': r.dailyAvg > 0 ? Math.round(r.dailyAvg * 100) / 100 : '',
+        '可用天数': r.availDays === Infinity ? '∞' : Math.round(r.availDays * 10) / 10,
+        '目标天数': r.targetDays,
+        '缺口(箱)': r.gap > 0 ? Math.round(r.gap * 100) / 100 : '',
+        '建议补库量(箱)': r.suggested > 0 ? r.suggested : '',
+        '箱规': r.boxText,
+        '手工计划值': r.manual == null ? '' : r.manual,
+        '状态': r.status,
+        '同步': r.synced ? ('已同步 ' + (r.syncTime || '').slice(0, 16)) : (r.suggested > 0 ? '待同步' : ''),
+        '规格型号': r.spec, '产品形态': r.form, '包装形式': r.pack
+      };
+    });
+    try {
+      var ws = XLSX.utils.json_to_sheet(rows, { header: headers });
+      ws['!cols'] = headers.map(function (c) {
+        if (c === '物料名称' || c === '规格型号') return { wch: 20 };
+        if (c === '产品系列' || c === '同步') return { wch: 16 };
+        if (c === '物料编码') return { wch: 13 };
+        return { wch: 11 };
+      });
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '备货建议');
+      var d = new Date();
+      var stamp = d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '_' + pad2(d.getHours()) + pad2(d.getMinutes());
+      var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      saveBlob(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), '备货建议_' + stamp + '.xlsx');
+      toast('已导出 ' + rows.length + ' 条备货建议', 'ok');
+    } catch (err) {
+      toast('导出失败：' + (err && err.message ? err.message : err), 'err');
+    }
+  }
+
+  /* ---------------- 初始化 ---------------- */
   function init() {
     var btn;
     btn = $('#repl-cfg-save'); if (btn) btn.addEventListener('click', saveCfg);
     btn = $('#repl-sync'); if (btn) btn.addEventListener('click', syncToMaterial);
+    btn = $('#repl-export'); if (btn) btn.addEventListener('click', exportXLSX);
     btn = $('#repl-search');
     if (btn) btn.addEventListener('input', function () { state.keyword = btn.value.trim(); renderTable(); });
     $all('.repl-status-filter button').forEach(function (b) {
