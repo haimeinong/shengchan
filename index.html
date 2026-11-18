@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="库存看板">
-<link rel="stylesheet" href="assets/css/style.css?v=20261106a">
+<link rel="stylesheet" href="assets/css/style.css?v=20261118a">
 </head>
 <body>
 <div class="app">
@@ -30,11 +30,11 @@
       <a class="nav-item" data-view="semi"><span>◍</span>半成品</a>
       <a class="nav-item" data-view="backorder"><span>✦</span>欠货跟踪</a>
       <a class="nav-item" data-view="flow"><span>⇉</span>库存流水及数据对比</a>
-      <div class="nav-group">二期规划（占位）</div>
+      <div class="nav-group">二期规划</div>
       <a class="nav-item" data-view="replenish"><span>◷</span>备货建议</a>
       <a class="nav-item" data-view="plan"><span>◆</span>月度生产规划</a>
       <a class="nav-item" data-view="semidemand"><span>◈</span>半成品需求参考</a>
-      <a class="nav-item disabled" data-view="schedule"><span>▤</span>排产分析</a>
+      <a class="nav-item" data-view="schedule"><span>▤</span>排产分析</a>
       <a class="nav-item" data-view="capacity"><span>⚙</span>产能档案</a>
       <div class="nav-group">数据管理</div>
       <a class="nav-item" data-view="import"><span>⇪</span>数据导入</a>
@@ -696,10 +696,181 @@
           </div>
         </div>
       </section>
-      <section class="view" id="view-schedule"><div class="soon">
-        <h2>排产分析（二期）</h2>
-        <p>二期上线：欠货 + 备货缺口合并、按产品形态 × 线体有效班产测算需排批次、瓶颈工段标红、成品任务自动做半成品齐套检查（BOM 单层展开）。</p>
-      </div></section>
+      <section class="view" id="view-schedule">
+        <div class="kpi-grid">
+          <div class="kpi-card"><div class="kpi-label">待排产 SKU</div><div class="kpi-value" id="sched-kpi-sku">–</div><div class="kpi-foot">确认天数内未排完的成品</div></div>
+          <div class="kpi-card"><div class="kpi-label">待排产数量（箱）</div><div class="kpi-value" id="sched-kpi-qty">–</div><div class="kpi-foot">需求数量 − 已排数量</div></div>
+          <div class="kpi-card"><div class="kpi-label">预计总工时（小时）</div><div class="kpi-value" id="sched-kpi-hours">–</div><div class="kpi-foot">按默认工段工时估算</div></div>
+          <div class="kpi-card warn"><div class="kpi-label">超负荷产线·天</div><div class="kpi-value" id="sched-kpi-overload">–</div><div class="kpi-foot">占用工时 &gt; 每日可用工时</div></div>
+          <div class="kpi-card danger"><div class="kpi-label">半成品缺料项</div><div class="kpi-value" id="sched-kpi-short">–</div><div class="kpi-foot">已排产所需半成品不足</div></div>
+          <div class="kpi-card"><div class="kpi-label">未分配产线 SKU</div><div class="kpi-value" id="sched-kpi-unmapped">–</div><div class="kpi-foot">映射缺失或产能单元缺失</div></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>排产参数<span class="hint">按工艺形态（产品形态+包装形式）匹配产线各工段产能；按优先级与交期排入未来 N 天</span></h2>
+          </div>
+          <div class="panel-body">
+            <div class="inline-form sched-cfg">
+              <label>起始日期 <input type="date" id="sched-start"></label>
+              <label>每日工时 <input type="number" id="sched-hours" min="1" max="24" step="0.5" style="width:72px"></label>
+              <label>确认天数 <input type="number" id="sched-days" min="1" max="14" step="1" style="width:66px"></label>
+              <label>单批上限(箱) <input type="number" id="sched-batch-max" min="0" step="1" style="width:88px" placeholder="不拆分"></label>
+              <label class="inline-check"><input type="checkbox" id="sched-inc-change"> 计入换线清场</label>
+              <label class="inline-check"><input type="checkbox" id="sched-inc-pick"> 计入领料</label>
+              <label>确认人 <input type="text" id="sched-confirmer" maxlength="20" style="width:90px" placeholder="姓名"></label>
+              <div class="inline-form-actions">
+                <button class="btn btn-primary btn-sm" id="sched-generate">生成/刷新排产建议</button>
+                <button class="btn btn-sm" id="sched-export">导出 Excel</button>
+              </div>
+            </div>
+            <div class="sched-tip">需求来源：欠货（未结清）＞ 备货紧急/预警 ＞ 月度生产计划剩余；同一 SKU 取三者最大值，避免重复排产。批次号在订单完工时按「物料编码+生产日期」自动建议，可补充班组大写字母后修改。</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>产品线映射<span class="hint">工艺形态 → 生产线 · 修改后点「保存映射」· 单个 SKU 可在需求清单下拉覆盖</span></h2>
+            <div class="filter-bar">
+              <input type="search" id="sched-line-search" placeholder="筛选：工艺形态 / 产品形态">
+              <button class="btn btn-primary btn-sm" id="sched-line-save">保存映射</button>
+            </div>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap flow-scroll sched-line-wrap">
+              <table class="grid" id="sched-line-table">
+                <thead><tr><th>工艺形态</th><th>产品形态</th><th>包装形式</th><th>生产线</th><th>默认工段</th><th class="num">涉及成品数</th><th>状态</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel-foot">产能矩阵按「工艺形态 × 工段」维护；未映射的形态不会自动排产。默认映射：原始香辛料→①、粉料/块料→②、酱料→③，可在此补充 ④液态线、⑤分装线。</div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>排产需求清单<span class="hint">三类来源合并 · 点「详情」查看各工段用工时间与半成品齐套 · 修改分配产线会保存到物料主数据</span></h2>
+            <div class="filter-bar">
+              <input type="search" id="sched-search" placeholder="筛选：编码/名称/系列">
+              <select id="sched-line-filter"><option value="">全部产线</option></select>
+              <select id="sched-source-filter">
+                <option value="">全部来源</option>
+                <option value="欠货">欠货</option>
+                <option value="备货">备货缺口</option>
+                <option value="月计划">月度计划</option>
+              </select>
+              <span class="seg" id="sched-status-filter">
+                <button class="active" data-st="">全部</button>
+                <button data-st="pending">未排完</button>
+                <button data-st="done">已排完</button>
+                <button data-st="unmapped">未分配</button>
+              </span>
+            </div>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap flow-scroll">
+              <table class="grid" id="sched-demand-table">
+                <thead><tr>
+                  <th>优先级</th><th>来源</th><th>物料编码</th><th>物料名称</th><th>产品系列</th><th>工艺形态</th>
+                  <th class="num">需求数量(箱)</th><th>需求日期</th><th>分配产线</th>
+                  <th class="num">单件工时</th><th>工段</th><th>设备组</th><th class="num">所需工时(h)</th>
+                  <th class="num">已排(箱)</th><th class="num">待排(箱)</th><th>齐套</th><th>操作</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel-foot">单件工时 = 默认工段「1 ÷ 每小时产量」；所需工时 = 需求数量 × 单件工时 + 批次换线/领料时间。产能取实测值，缺实测用借鉴值；单位非「箱/小时」的单元格标黄提示。默认工段在「产品线映射」中按工艺形态指定；设备组从「产能档案·产品矩阵」该工艺形态×默认工段的「设备组」字段读取。</div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>未来 3 天排产安排<span class="hint">顶部日期按钮切换 · 上半部分是该日推荐排产清单（可手动补充 / 移除 / 改数量 / 全部确定生成订单） · 下半部分是该日按设备组分组的生产卡片</span></h2>
+            <div class="filter-bar" id="sched-day-tabs-top"></div>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap flow-scroll">
+              <table class="grid" id="sched-suggest-table">
+                <thead><tr>
+                  <th class="num">序</th><th class="code">物料编码</th><th>物料名称</th>
+                  <th>工段</th><th>设备组</th><th class="num">计划数量(箱)</th>
+                  <th class="num">工时(h)</th><th>优先级</th><th>状态</th><th>操作</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel-foot" id="sched-suggest-foot"></div>
+          <div class="panel-body" id="sched-day-body" style="padding:12px 0"><div class="empty">暂无排产建议，请先点「生成/刷新排产建议」</div></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>生产订单与批次<span class="hint">确认排产后自动生成待生产订单 · 完工时补录批次号与班组 · 完工自动写入每日实际产出</span></h2>
+            <div class="filter-bar">
+              <select id="sched-order-status">
+                <option value="">全部状态</option>
+                <option value="待生产">待生产</option>
+                <option value="已完工">已完工</option>
+              </select>
+              <input type="search" id="sched-order-search" placeholder="筛选：订单号/编码/批次号">
+              <button class="btn btn-sm" id="sched-opening-import">导入期初批次</button>
+              <button class="btn btn-link" id="sched-opening-tpl">下载期初模板</button>
+              <input type="file" id="sched-opening-file" accept=".xlsx,.xls,.csv" hidden>
+            </div>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap flow-scroll">
+              <table class="grid" id="sched-order-table">
+                <thead><tr>
+                  <th>订单号</th><th>排产日期</th><th>产线</th><th>物料编码</th><th>物料名称</th>
+                  <th class="num">计划(箱)</th><th class="num">完工(箱)</th><th>批次号</th><th>班组</th><th>生产日期</th><th>状态</th><th>操作</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>当前库存批次构成<span class="hint">先进先出：当前库存从最新批次往前倒推，更早批次视为已出库 · 期初库存可导入批次</span></h2>
+            <div class="filter-bar">
+              <input type="search" id="sched-batch-search" placeholder="筛选：编码/名称/批次号">
+              <span class="seg" id="sched-batch-scope">
+                <button class="active" data-scope="batch">仅有批次</button>
+                <button data-scope="all">全部有库存</button>
+              </span>
+            </div>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap flow-scroll">
+              <table class="grid" id="sched-batch-table">
+                <thead><tr>
+                  <th>物料编码</th><th>物料名称</th><th class="num">当前库存(箱)</th><th class="num">剩余批次数</th>
+                  <th>剩余批次（新→旧）</th><th class="num">期初无批次</th><th>操作</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel-foot">例：当前剩余 120 箱，由最新批次（80 箱）和次新批次（40 箱）构成，其余更早批次视为已按先进先出出库。期初库存 = 上线前的库存，没有批次记录，单独列示。</div>
+        </div>
+
+        <div class="panel" id="sched-missing-panel" hidden>
+          <div class="panel-head">
+            <h2>排产数据缺失（<span id="sched-missing-count">0</span> 项）<span class="hint">以下成品有需求但无法排产，请补充产品形态/包装形式、产线映射或产能矩阵</span></h2>
+          </div>
+          <div class="panel-body no-pad">
+            <div class="table-wrap flow-scroll">
+              <table class="grid" id="sched-missing-table">
+                <thead><tr><th>物料编码</th><th>物料名称</th><th>工艺形态</th><th class="num">需求数量(箱)</th><th>缺失原因</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
       <section class="view" id="view-capacity">
         <div class="panel">
           <div class="panel-head">
@@ -722,7 +893,7 @@
 
         <div class="panel">
           <div class="panel-head">
-            <h2>产能矩阵（借鉴值 / 实测值，默认每小时产量）<span class="hint">按生产线筛选（行随产线映射联动：原始香辛料→① 粉料/块料→② 酱料→③） · 行=工艺形态（产品形态-包装形式） 列=工段 · 双击单元格编辑 借鉴值/实测值/领料时间/调试换线清场时间/设备类型/备注</span></h2>
+            <h2>产能矩阵（借鉴值 / 实测值，默认每小时产量）<span class="hint">按生产线筛选（行随产线映射联动：原始香辛料→① 粉料/块料→② 酱料→③） · 行=工艺形态（产品形态-包装形式） 列=工段 · 双击单元格编辑 借鉴值/实测值/领料时间/调试换线清场时间/设备组/备注</span></h2>
             <div class="filter-bar">
               <select id="cap-line-filter"></select>
               <input type="search" id="cap-form-search" placeholder="筛选：工艺形态">
@@ -816,16 +987,41 @@
   </div>
 </div>
 
+<!-- 生产订单完工录入（批次号追踪） -->
+<div class="modal-mask" id="sched-complete-mask" hidden>
+  <div class="modal">
+    <div class="modal-head"><h3>生产订单完工</h3><button class="btn btn-ghost" id="sched-complete-close">✕</button></div>
+    <div class="modal-body">
+      <div class="mat-form">
+        <label>订单号<input type="text" id="sc-order-no" readonly></label>
+        <label>物料<input type="text" id="sc-mat" readonly></label>
+        <label>计划数量(箱)<input type="text" id="sc-plan" readonly></label>
+        <label>完工数量(箱)*<input type="number" id="sc-qty" min="0" step="1"></label>
+        <label>完工日期*<input type="date" id="sc-date"></label>
+        <label>班组（大写字母）<input type="text" id="sc-team" maxlength="2" placeholder="如 A"></label>
+        <label>批次号*<input type="text" id="sc-batch" maxlength="60" placeholder="物料编码+生产日期+班组"></label>
+        <label>备注<input type="text" id="sc-remark" maxlength="80"></label>
+      </div>
+      <div class="sched-tip" style="margin-top:10px">批次号默认按「物料编码+完工日期」生成，班组字母会自动追加，可手工修改。工完自动写入产能档案的每日实际产出。</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="sched-complete-cancel">取消</button>
+      <button class="btn btn-primary" id="sched-complete-save">确认完工</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast-wrap" id="toast-wrap"></div>
 
 <script src="assets/lib/xlsx.full.min.js?v=20261014a"></script>
 <script src="assets/js/db.js?v=20261014a"></script>
 <script src="assets/js/import.js?v=20261014a"></script>
 <script src="assets/js/backup.js?v=20261014a"></script>
-<script src="assets/js/capacity.js?v=20261014a"></script>
+<script src="assets/js/capacity.js?v=20261118b"></script>
 <script src="assets/js/replenish.js?v=20261114a"></script>
 <script src="assets/js/plan.js?v=20261027c"></script>
 <script src="assets/js/semidemand.js?v=20261020b"></script>
+<script src="assets/js/schedule.js?v=20261118e"></script>
 <script src="assets/js/app.js?v=20261110a"></script>
 <script>
 /* PWA：仅在 http(s) 下注册 Service Worker（file:// 双击打开时不注册） */
