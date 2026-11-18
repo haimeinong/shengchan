@@ -536,8 +536,13 @@ table.grid.edit td input:focus, table.grid.edit td select:focus { border-color: 
 .sched-tip { margin-top: 8px; padding: 8px 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; font-size: 12px; color: #1e40af; line-height: 1.7; }
 .sched-line-wrap { max-height: 320px; }
 .sched-line-wrap thead th { z-index: 2; }
-.sched-line-select { padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 12.5px; background: #fff; }
+.sched-line-select { padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 12.5px; background: #fff; min-width: 56px; }
 .sched-line-select.sched-line-unset { border-color: #f59e0b; background: #fffbeb; color: #b45309; }
+/* 需求清单长列省略号，避免横向滚动条 */
+#sched-demand-table td .cell-ellipsis { display: inline-block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+#sched-demand-table th:nth-child(4), #sched-demand-table td:nth-child(4) { max-width: 140px; }  /* 物料名称 */
+#sched-demand-table th:nth-child(11), #sched-demand-table td:nth-child(11) { max-width: 110px; } /* 工段 */
+#sched-demand-table th:nth-child(12), #sched-demand-table td:nth-child(12) { max-width: 110px; } /* 设备组 */
 .sched-pri { display: inline-block; padding: 2px 8px; border-radius: 9px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
 .sched-pri.p1 { background: #fee2e2; color: #b91c1c; }
 .sched-pri.p2 { background: #ffedd5; color: #c2410c; }
