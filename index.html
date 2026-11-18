@@ -618,6 +618,7 @@
               <button class="btn btn-sm" id="plan-toggle-nostock" type="button" title="物料主数据中「目标库存天数」填 0 的产品不参与备货，默认不显示">显示不备货产品</button>
               <button class="btn btn-sm" id="plan-export" type="button" title="按当前筛选结果导出 Excel">导出 Excel</button>
               <button class="btn btn-sm" id="plan-export-history" type="button" title="按年月范围导出每个产品的月度出库历史">导出历史出库</button>
+              <button class="btn btn-sm btn-primary" id="plan-import" type="button" title="下载模板并导入 Excel 计划">导入计划</button>
             </div>
           </div>
           <div class="bo-batch-bar" id="plan-batch-bar" hidden>
@@ -960,6 +961,30 @@
   </div>
 </div>
 
+<!-- 月度生产计划导入弹窗 -->
+<div class="modal-mask" id="plan-import-mask" hidden>
+  <div class="modal">
+    <div class="modal-head"><h3>导入月度生产计划</h3><button class="btn btn-ghost" id="plan-import-close">✕</button></div>
+    <div class="modal-body">
+      <p class="hint">导入月份：<strong id="plan-import-month"></strong>（跟随当前选中月份）。导入后对应产品的计划数量将被<strong>覆盖</strong>，状态直接设为<strong>已确认</strong>。</p>
+      <p class="hint">模板列：<strong>物料编码*</strong>、物料名称、<strong>计划数量*</strong>（必填项）。物料名称仅作展示，以编码匹配。</p>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
+        <button class="btn btn-sm" id="plan-import-template" type="button">下载导入模板</button>
+        <span class="muted" id="plan-import-file-label">未选择文件</span>
+      </div>
+      <input type="file" id="plan-import-file" accept=".xlsx,.xls" hidden>
+      <div style="margin-top:12px;">
+        <button class="btn btn-primary" id="plan-import-pick" type="button">选择 Excel 文件…</button>
+        <button class="btn btn-primary" id="plan-import-run" type="button" disabled>开始导入</button>
+      </div>
+      <div id="plan-import-report" hidden style="margin-top:12px;border:1px solid #e5e7eb;border-radius:6px;padding:10px;max-height:260px;overflow:auto;font-size:13px;"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="plan-import-cancel">关闭</button>
+    </div>
+  </div>
+</div>
+
 <!-- 物料主数据编辑弹窗（新增 / 详细编辑共用） -->
 <div class="modal-mask" id="mat-edit-mask" hidden>
   <div class="modal">
@@ -1019,7 +1044,7 @@
 <script src="assets/js/backup.js?v=20261014a"></script>
 <script src="assets/js/capacity.js?v=20261118b"></script>
 <script src="assets/js/replenish.js?v=20261114a"></script>
-<script src="assets/js/plan.js?v=20261027c"></script>
+<script src="assets/js/plan.js?v=20261118a"></script>
 <script src="assets/js/semidemand.js?v=20261020b"></script>
 <script src="assets/js/schedule.js?v=20261118e"></script>
 <script src="assets/js/app.js?v=20261110a"></script>
