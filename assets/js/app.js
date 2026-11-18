@@ -1605,6 +1605,7 @@
     if (v === 'replenish' && window.ReplenishView) ReplenishView.render();
     if (v === 'plan' && window.PlanView) PlanView.render();
     if (v === 'semidemand' && window.SemiDemandView) SemiDemandView.render();
+    if (v === 'schedule' && window.ScheduleView) ScheduleView.render();
     /* 主视图按需渲染：只有数据变化过（renderedView 无标记）才重建，避免每次切菜单都重绘 */
     if (!renderedView[v]) renderView(v);
   }
@@ -1663,6 +1664,7 @@
     initSemi();
     initBackup();
     if (window.CapacityView) CapacityView.init();
+    if (window.ScheduleView) ScheduleView.init();
     if (window.ReplenishView) ReplenishView.init();
     if (window.PlanView) PlanView.init();
     if (window.SemiDemandView) SemiDemandView.init();

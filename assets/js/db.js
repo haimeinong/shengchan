@@ -21,13 +21,24 @@
  *   fact_plan_monthly   月度生产计划(二期) key: [月份,物料编码]  v4 新增  索引: idx_month
  *                      字段：推荐数量/推荐依据{去年同期,今年上月,去年上月,系数}/计划数量/
  *                            状态(草稿|已确认)/确认人/确认时间/备注/修改记录[]/创建时间/更新时间
+ *   dim_line_map        工艺形态映射(排产)       key: [产品形态,包装形式]  v5 新增  v5.1 扩充默认工段
+ *                      字段：产品形态/包装形式/生产线/默认工段编号/更新时间
+ *                            默认工段为该工艺形态成品加工所经由的工段（从半成品直接加工到成品的环节）；
+ *                            生产线可从工段反查，也可手工指定以兼容未维护工段的形态
+ *   fact_schedule_task  排产任务(排产)           key: [排产日期,物料编码]  v5 新增  索引: idx_date
+ *                      字段：排产日期/物料编码/生产线/计划数量(箱)/优先级/来源/瓶颈工段/
+ *                            单件工时/所需工时/状态(建议|已确认)/确认人/确认时间/修改记录/备注
+ *   fact_prod_order     生产订单与批次(排产)     key: id (auto)  v5 新增  索引: idx_code/idx_status
+ *                      字段：订单号/批次号/物料编码/物料名称/产品形态/包装形式/生产线/
+ *                            生产日期/计划数量/完工数量/班组/类型(生产|期初)/状态(待生产|已完工)/
+ *                            排产日期/瓶颈工段/单件工时/备注/创建时间/完工时间/修改记录
  *   op_log              操作审计日志      key: id (auto)
  * ============================================================ */
 (function (global) {
   'use strict';
 
   var DB_NAME = 'inventory_dashboard';
-  var DB_VERSION = 4;
+  var DB_VERSION = 5;
 
   var STORES = {
     material:      { name: 'mdl_material',      keyPath: '物料编码' },
@@ -39,6 +50,9 @@
     bom:           { name: 'mdl_bom_link',      keyPath: ['成品编码', '半成品编码'] },
     replenish_cfg: { name: 'mdl_replenish_cfg', keyPath: '参数键' },
     plan:          { name: 'fact_plan_monthly', keyPath: ['月份', '物料编码'] },
+    line_map:      { name: 'dim_line_map',      keyPath: ['产品形态', '包装形式'] },
+    schedule:      { name: 'fact_schedule_task', keyPath: ['排产日期', '物料编码'] },
+    prodorder:     { name: 'fact_prod_order',   keyPath: 'id', auto: true },
     oplog:         { name: 'op_log',            keyPath: 'id', auto: true }
   };
 
@@ -89,6 +103,17 @@
             var planStore = tx.objectStore(STORES.plan.name);
             if (!planStore.indexNames.contains('idx_month')) planStore.createIndex('idx_month', '月份');
           } catch (err3) { /* 索引已存在或表刚创建时忽略 */ }
+        }
+
+        /* v4 → v5：排产任务与生产订单索引 */
+        if (oldV < 5) {
+          try {
+            var schedStore = tx.objectStore(STORES.schedule.name);
+            if (!schedStore.indexNames.contains('idx_date')) schedStore.createIndex('idx_date', '排产日期');
+            var poStore = tx.objectStore(STORES.prodorder.name);
+            if (!poStore.indexNames.contains('idx_code')) poStore.createIndex('idx_code', '物料编码');
+            if (!poStore.indexNames.contains('idx_status')) poStore.createIndex('idx_status', '状态');
+          } catch (err4) { /* 索引已存在或表刚创建时忽略 */ }
         }
       };
       req.onsuccess = function () { resolve(req.result); };
