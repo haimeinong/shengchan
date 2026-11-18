@@ -450,6 +450,148 @@
     }
   }
 
+  /* ---------------- 月度计划导入 ---------------- */
+  var importFileObj = null;   /* 缓存选中的文件对象 */
+
+  function openImportModal() {
+    var mask = $('#plan-import-mask'); if (!mask) return;
+    $('#plan-import-month').textContent = state.month;
+    $('#plan-import-file-label').textContent = '未选择文件';
+    $('#plan-import-run').disabled = true;
+    $('#plan-import-report').hidden = true;
+    $('#plan-import-report').innerHTML = '';
+    var inp = $('#plan-import-file'); if (inp) inp.value = '';
+    importFileObj = null;
+    mask.hidden = false;
+  }
+  function closeImportModal() { var m = $('#plan-import-mask'); if (m) m.hidden = true; }
+
+  /** 下载空白导入模板 */
+  function downloadImportTemplate() {
+    if (typeof XLSX === 'undefined') { toast('Excel 组件未加载，请刷新后重试', 'err'); return; }
+    var headers = [['物料编码*', '物料名称', '计划数量*']];
+    var ws = XLSX.utils.aoa_to_sheet(headers);
+    ws['!cols'] = [{ wch: 18 }, { wch: 22 }, { wch: 14 }];
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '月度计划导入');
+    var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    saveBlob(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), '月度计划导入模板.xlsx');
+  }
+
+  /** 解析 Excel → [{行号, 物料编码, 物料名称, 计划数量}] */
+  function parseImportFile(file) {
+    return file.arrayBuffer().then(function (buf) {
+      var wb = XLSX.read(buf, { type: 'array', cellDates: true });
+      var rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', raw: true });
+      if (rows.length < 2) throw new Error('Excel 为空或只有表头');
+      /* 找表头列位置（兼容中文列名顺序不同的情况） */
+      var header = rows[0].map(function (h) { return String(h).trim(); });
+      var idxCode = header.indexOf('物料编码');
+      var idxName = header.indexOf('物料名称');
+      var idxQty = header.indexOf('计划数量');
+      if (idxCode < 0 || idxQty < 0) throw new Error('模板缺少必填列：物料编码 / 计划数量');
+      var data = [];
+      for (var i = 1; i < rows.length; i++) {
+        var r = rows[i];
+        var code = String(r[idxCode] || '').trim();
+        if (!code) continue;   /* 跳过空行 */
+        var qtyRaw = r[idxQty];
+        var qty = (qtyRaw === '' || qtyRaw == null) ? null : (+qtyRaw);
+        data.push({
+          行号: i + 1,
+          物料编码: code,
+          物料名称: idxName >= 0 ? String(r[idxName] || '').trim() : '',
+          计划数量: qty
+        });
+      }
+      return data;
+    });
+  }
+
+  /** 校验 + 写入 DB，返回 {ok, fail, errors} */
+  function runImport(parsed) {
+    /* 建物料编码→物料 对象索引 */
+    var matByCode = {};
+    state.materials.forEach(function (m) { matByCode[m.物料编码] = m; });
+
+    var ok = [], errors = [];
+    parsed.forEach(function (row) {
+      var m = matByCode[row.物料编码];
+      if (!m) { errors.push({ 行号: row.行号, 物料编码: row.物料编码, 原因: '物料编码在主数据中不存在' }); return; }
+      if ((m.库存属性 || '成品') !== '成品') { errors.push({ 行号: row.行号, 物料编码: row.物料编码, 原因: '非成品物料，不参与生产计划' }); return; }
+      if (row.计划数量 == null) { errors.push({ 行号: row.行号, 物料编码: row.物料编码, 原因: '计划数量为空' }); return; }
+      if (!isFinite(row.计划数量) || row.计划数量 < 0) { errors.push({ 行号: row.行号, 物料编码: row.物料编码, 原因: '计划数量必须是非负整数' }); return; }
+      ok.push(row);
+    });
+
+    if (!ok.length) {
+      return Promise.resolve({ ok: 0, fail: parsed.length, errors: errors });
+    }
+
+    var name = getConfirmer() || '导入';
+    var ts = nowStr();
+
+    /* 为成功写入的记录新建/覆盖 plan 记录 */
+    var tasks = ok.map(function (r) {
+      var p = state.plans[r.物料编码];
+      var rCmd = recommendFor(r.物料编码);    /* 计算推荐依据（保证推荐字段有值） */
+      if (!p) {
+        p = {
+          月份: state.month, 物料编码: r.物料编码,
+          推荐数量: rCmd.rec, 推荐依据: rCmd.basis,
+          计划数量: Math.round(r.计划数量), 状态: '已确认',
+          确认人: name, 确认时间: ts, 备注: '',
+          修改记录: [{ 时间: ts, 操作: '导入覆盖', 原值: '', 新值: Math.round(r.计划数量) }],
+          创建时间: ts, 更新时间: ts
+        };
+      } else {
+        var before = p.计划数量;
+        p.计划数量 = Math.round(r.计划数量);
+        p.推荐数量 = rCmd.rec;
+        p.推荐依据 = rCmd.basis;
+        p.状态 = '已确认';
+        p.确认人 = name;
+        p.确认时间 = ts;
+        p.更新时间 = ts;
+        p.修改记录 = p.修改记录 || [];
+        p.修改记录.push({ 时间: ts, 操作: '导入覆盖', 原值: before, 新值: Math.round(r.计划数量) });
+      }
+      return DB.put('plan', p);
+    });
+
+    return Promise.all(tasks).then(function () {
+      return DB.log({
+        操作类型: '生产计划导入',
+        详情: { 月份: state.month, 成功: ok.length, 失败: errors.length, 确认人: name, 编码: ok.map(function (r) { return r.物料编码; }).join(',') }
+      });
+    }).then(function () {
+      return loadAll().then(renderAll);
+    }).then(function () {
+      return { ok: ok.length, fail: errors.length, errors: errors };
+    });
+  }
+
+  /** 渲染导入报告到弹窗 */
+  function showImportReport(result, month) {
+    var box = $('#plan-import-report'); box.hidden = false;
+    var html = '<p><strong>月份：</strong>' + esc(month) + '</p>'
+      + '<p><strong>成功导入：</strong>' + result.ok + ' 条'
+      + '<strong style="color:#ef4444;margin-left:12px;">失败：</strong>' + result.fail + ' 条</p>';
+    if (result.errors.length) {
+      html += '<table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:12px;">'
+        + '<thead><tr style="background:#f3f4f6;"><th style="border:1px solid #e5e7eb;padding:4px;">行号</th>'
+        + '<th style="border:1px solid #e5e7eb;padding:4px;">物料编码</th>'
+        + '<th style="border:1px solid #e5e7eb;padding:4px;">失败原因</th></tr></thead><tbody>';
+      result.errors.forEach(function (e) {
+        html += '<tr><td style="border:1px solid #e5e7eb;padding:4px;text-align:center;">' + e.行号 + '</td>'
+          + '<td style="border:1px solid #e5e7eb;padding:4px;">' + esc(e.物料编码) + '</td>'
+          + '<td style="border:1px solid #e5e7eb;padding:4px;color:#ef4444;">' + esc(e.原因) + '</td></tr>';
+      });
+      html += '</tbody></table>';
+    }
+    box.innerHTML = html;
+  }
+
   /* ---------------- 写操作 ---------------- */
   function newPlanRow(code, rec, basis) {
     var ts = nowStr();
@@ -649,6 +791,42 @@
     if (histOk) histOk.addEventListener('click', function () {
       var f = $('#plan-hist-from').value, t = $('#plan-hist-to').value;
       exportHistoryXlsx(f, t);
+    });
+    /* 月度计划导入事件 */
+    var importBtn = $('#plan-import');
+    if (importBtn) importBtn.addEventListener('click', openImportModal);
+    var importClose = $('#plan-import-close'), importCancel = $('#plan-import-cancel');
+    if (importClose) importClose.addEventListener('click', closeImportModal);
+    if (importCancel) importCancel.addEventListener('click', closeImportModal);
+    var importTpl = $('#plan-import-template');
+    if (importTpl) importTpl.addEventListener('click', downloadImportTemplate);
+    var importPick = $('#plan-import-pick'), importFileInp = $('#plan-import-file');
+    if (importPick && importFileInp) importPick.addEventListener('click', function () { importFileInp.click(); });
+    if (importFileInp) importFileInp.addEventListener('change', function () {
+      var f = importFileInp.files && importFileInp.files[0];
+      if (!f) return;
+      importFileObj = f;
+      $('#plan-import-file-label').textContent = f.name + '（' + Math.round(f.size / 1024) + ' KB）';
+      $('#plan-import-run').disabled = false;
+      $('#plan-import-report').hidden = true;
+    });
+    var importRun = $('#plan-import-run');
+    if (importRun) importRun.addEventListener('click', function () {
+      if (!importFileObj) { toast('请先选择 Excel 文件', 'warn'); return; }
+      importRun.disabled = true;
+      importRun.textContent = '导入中…';
+      parseImportFile(importFileObj).then(function (parsed) {
+        if (!parsed.length) { toast('Excel 没有有效数据行', 'warn'); importRun.disabled = false; importRun.textContent = '开始导入'; return; }
+        return runImport(parsed).then(function (res) {
+          showImportReport(res, state.month);
+          toast('导入完成：成功 ' + res.ok + ' 条，失败 ' + res.fail + ' 条', res.ok > 0 ? 'ok' : 'warn');
+        });
+      }).catch(function (e) {
+        toast('解析失败：' + (e.message || e), 'err');
+      }).then(function () {
+        importRun.disabled = false;
+        importRun.textContent = '开始导入';
+      });
     });
     var noStockBtn = $('#plan-toggle-nostock');
     if (noStockBtn) noStockBtn.addEventListener('click', function () {
