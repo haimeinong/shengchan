@@ -64,9 +64,16 @@
     var l = lineByCode(code);
     return l ? (l.seq + ' ' + l.name) : (code || '');
   }
+  /* 简短显示：L01→L1、L02→L2 …… 用于表格/下拉里节省横向空间，全名放 title 悬停 */
+  function lineShortLabel(code) {
+    var l = lineByCode(code);
+    if (!l) return code || '';
+    return 'L' + String(l.code).replace(/^L0?/, '');
+  }
   function lineOptions(sel) {
     return '<option value="">未分配</option>' + PRODUCTION_LINES.map(function (l) {
-      return '<option value="' + l.code + '"' + (sel === l.code ? ' selected' : '') + '>' + l.seq + ' ' + l.name + '</option>';
+      var short = 'L' + String(l.code).replace(/^L0?/, '');
+      return '<option value="' + l.code + '"' + (sel === l.code ? ' selected' : '') + ' title="' + l.seq + ' ' + l.name + '">' + short + '</option>';
     }).join('');
   }
 
@@ -730,15 +737,15 @@
         + '<td>' + priBadge(r.priority) + '</td>'
         + '<td>' + srcTags(r) + '</td>'
         + '<td class="code">' + esc(r.code) + '</td>'
-        + '<td>' + esc(r.name) + '</td>'
+        + '<td><span class="cell-ellipsis" title="' + esc(r.name) + '">' + esc(r.name) + '</span></td>'
         + '<td>' + esc(r.series) + '</td>'
         + '<td>' + esc(r.combo || '—') + (r.labor.unitBad.length ? ' <span class="sched-unit-bad" title="产能单位不是箱/小时">⚠</span>' : '') + '</td>'
         + '<td class="num">' + fmtNum(r.qty) + '</td>'
         + '<td>' + esc(r.date || '—') + '</td>'
         + '<td>' + lineSel + '</td>'
         + '<td class="num">' + unitCell + '</td>'
-        + '<td>' + (r.sectionCode ? esc(r.sectionCode) + ' <span class="muted">' + esc(r.sectionName) + '</span>' : '<span class="sched-warn-text">—</span>') + '</td>'
-        + '<td>' + esc(r.deviceType || '—') + '</td>'
+        + '<td>' + (r.sectionCode ? esc(r.sectionCode) + ' <span class="muted"><span class="cell-ellipsis" title="' + esc(r.sectionName) + '">' + esc(r.sectionName) + '</span></span>' : '<span class="sched-warn-text">—</span>') + '</td>'
+        + '<td><span class="cell-ellipsis" title="' + esc(r.deviceType || '') + '">' + esc(r.deviceType || '—') + '</span></td>'
         + '<td class="num">' + (r.unitHours ? fmtNum(round2(r.hours)) : '—') + '</td>'
         + '<td class="num">' + fmtNum(r.scheduled) + '</td>'
         + '<td class="num">' + (r.remaining > 0.0001 ? '<b class="sched-warn-text">' + fmtNum(r.remaining) + '</b>' : '0') + '</td>'
