@@ -307,7 +307,7 @@
       + '<label>实测值（每小时产量，可带单位） <input type="text" class="cell-act" value="' + esc(curAct) + '" maxlength="30" placeholder="如 48箱/h"></label>'
       + '<label>领料时间(分钟) <input type="number" min="0" step="1" class="cell-pick" value="' + curPick + '"></label>'
       + '<label>调试换线/清场时间(分钟) <input type="number" min="0" step="1" class="cell-changeover" value="' + curChangeover + '"></label>'
-      + '<label>设备类型 <input type="text" class="cell-device" value="' + esc(curDevice) + '" maxlength="40" placeholder="如 机器包装 / 人工包装"></label>'
+      + '<label>设备组 <input type="text" class="cell-device" value="' + esc(curDevice) + '" maxlength="40" placeholder="如 机器包装 / 人工包装"></label>'
       + '<label>备注 <input type="text" class="cell-remark" value="' + esc(curRemark) + '" maxlength="40"></label>'
       + '<div class="cell-edit-actions">'
       + '<button class="btn btn-primary btn-sm cell-save">保存</button> '
