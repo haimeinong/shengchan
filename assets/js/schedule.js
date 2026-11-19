@@ -938,7 +938,7 @@
             : (ov ? '<span class="repl-badge warn">已调整</span>' : '<span class="repl-sync-tag pending">建议</span>');
           return '<tr>'
             + '<td class="code">' + esc(t.code) + '</td>'
-            + '<td>' + esc(nm) + ' ' + statusTag + '</td>'
+            + '<td><span class="sched-name-cell" title="' + esc(nm) + '"><span class="cell-ellipsis" style="max-width:100%">' + esc(nm) + '</span>' + statusTag + '</span></td>'
             + '<td class="num">' + fmtNum(qtyDisp) + '</td></tr>';
         }).join('')
         + '</tbody></table>'
@@ -1720,29 +1720,98 @@
       if (!state.dates || !state.dates.length) { toast('请先生成排产建议', 'warn'); return; }
       var html = '<div class="inline-form" id="manual-add-form">'
         + '<label>日期* <select id="ma-date">'
-        + state.dates.map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '（' + weekLabel(d) + '）</option>'; }).join('')
-        + '</select></label>'
-        + '<label>物料编码* <select id="ma-code">'
-        + state.materials.map(function (m) {
-            var info = sectionInfoOf(m.物料编码, m);
-            return '<option value="' + esc(m.物料编码) + '">' + esc(m.物料编码) + ' ' + esc(m.物料名称 || '') + ' [' + esc(info.line || '未分配') + ']</option>';
-          }).join('')
+        + state.dates.map(function (d) { return '<option value="' + esc(d) + '"' + (d === state.dayTab ? ' selected' : '') + '>' + esc(d) + '（' + weekLabel(d) + '）</option>'; }).join('')
         + '</select></label>'
         + '<label>数量(箱)* <input type="number" min="1" step="1" id="ma-qty" value="10"></label>'
+        + '<label class="ma-code-label">物料（输入编码或名称搜索）*'
+        + '<input type="text" id="ma-code-search" autocomplete="off" placeholder="如 6926502 或 五香粉">'
+        + '<input type="hidden" id="ma-code" value="">'
+        + '<div class="combo-hint" id="ma-code-hint">未选择</div>'
+        + '<div class="combo-list" id="ma-code-list"></div>'
+        + '</label>'
         + '<div class="inline-form-actions">'
         + '<button class="btn btn-primary btn-sm" id="ma-ok">确认添加</button> '
         + '<button class="btn btn-sm" id="ma-cancel">取消</button></div></div>';
       $('#modal-title').textContent = '手动补充排产';
       $('#modal-body').innerHTML = html;
       $('#modal-mask').hidden = false;
+
+      var picked = '';
+      var activeIdx = -1;
+      var shown = [];
+
+      function renderList(kw) {
+        kw = String(kw || '').trim().toLowerCase();
+        var pool = state.materials;
+        if (kw) {
+          pool = pool.filter(function (m) {
+            return String(m.物料编码).toLowerCase().indexOf(kw) >= 0
+              || String(m.物料名称 || '').toLowerCase().indexOf(kw) >= 0;
+          });
+        }
+        shown = pool.slice(0, 60);
+        activeIdx = -1;
+        var list = $('#ma-code-list');
+        if (!shown.length) {
+          list.innerHTML = '<div class="combo-empty">未匹配到物料</div>';
+          return;
+        }
+        list.innerHTML = shown.map(function (m, i) {
+          var info = sectionInfoOf(m.物料编码, m);
+          return '<div class="combo-item" data-idx="' + i + '" data-code="' + esc(m.物料编码) + '">'
+            + '<span class="combo-item-code">' + esc(m.物料编码) + '</span>'
+            + '<span class="combo-item-name">' + esc(m.物料名称 || '') + '</span>'
+            + '<span class="combo-item-line">' + esc(info.deviceType || info.line || '未映射') + '</span></div>';
+        }).join('')
+          + (pool.length > shown.length ? '<div class="combo-more">仅显示前 ' + shown.length + ' 条，请继续输入缩小范围</div>' : '');
+      }
+
+      function pick(code) {
+        var m = state.matMap[code] || state.materials.filter(function (x) { return x.物料编码 === code; })[0];
+        if (!m) return;
+        picked = code;
+        $('#ma-code').value = code;
+        $('#ma-code-search').value = code + ' ' + (m.物料名称 || '');
+        var info = sectionInfoOf(code, m);
+        $('#ma-code-hint').innerHTML = '已选：<b>' + esc(m.物料名称 || '') + '</b> · 设备组 ' + esc(info.deviceType || '手工生产组') + ' · 工段 ' + esc(info.sectionCode || '—');
+        $('#ma-code-list').innerHTML = '';
+      }
+
+      var searchEl = $('#ma-code-search');
+      searchEl.addEventListener('input', function () {
+        picked = ''; $('#ma-code').value = ''; $('#ma-code-hint').textContent = '未选择';
+        renderList(this.value);
+      });
+      searchEl.addEventListener('keydown', function (e) {
+        var items = $$('#ma-code-list .combo-item');
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (!items.length) { renderList(''); items = $$('#ma-code-list .combo-item'); }
+          if (!items.length) return;
+          activeIdx = e.key === 'ArrowDown' ? Math.min(items.length - 1, activeIdx + 1) : Math.max(0, activeIdx - 1);
+          items.forEach(function (el, i) { el.classList.toggle('active', i === activeIdx); });
+          if (items[activeIdx].scrollIntoView) items[activeIdx].scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter') {
+          if (activeIdx >= 0 && items[activeIdx]) { e.preventDefault(); pick(items[activeIdx].getAttribute('data-code')); }
+          else if (shown.length === 1) { e.preventDefault(); pick(shown[0].物料编码); }
+        }
+      });
+      $('#ma-code-list').addEventListener('click', function (e) {
+        var it = e.target.closest('.combo-item');
+        if (it) pick(it.getAttribute('data-code'));
+      });
+
       $('#ma-cancel').onclick = function () { $('#modal-mask').hidden = true; };
       $('#ma-ok').onclick = function () {
         var date = $('#ma-date').value;
-        var code = $('#ma-code').value;
         var qty = Math.max(1, Math.floor(+$('#ma-qty').value || 0));
-        addManualTask(date, code, qty);
+        if (!picked) { toast('请先输入并选择物料', 'warn'); return; }
+        addManualTask(date, picked, qty);
         $('#modal-mask').hidden = true;
       };
+
+      renderList('');
+      searchEl.focus();
     }
 
     function addManualTask(date, code, qty) {
