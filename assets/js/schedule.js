@@ -11,7 +11,7 @@
   'use strict';
 
   /* 构建标识：与 index.html 中 schedule.js?v= 保持一致，便于排查"页面已更新但脚本仍是旧缓存"的问题 */
-  global.SCHED_BUILD = '20261119g';
+  global.SCHED_BUILD = '20261119j';
   try { console.info('[排产] schedule.js 构建 ' + global.SCHED_BUILD); } catch (e) {}
 
   /* ---------------- 通用工具 ---------------- */
@@ -93,7 +93,7 @@
     demand: [], missing: [], planRows: [],
     keyword: '', lineFilter: '', sourceFilter: '', statusFilter: '',
     lineKeyword: '', lineEdits: {},
-    dayTab: '', expanded: {}, expandedBatches: {},
+    dayTab: '', dayFilter: 'confirmed', expanded: {}, expandedBatches: {},
     dayOverrides: {}, /* 人工调整：{ '日期|物料编码': { qty } } */
     orderStatus: '', orderKeyword: '', batchKeyword: '', batchScope: 'batch',
     completeOrder: null, batchDirty: false, initialized: false, loading: null
@@ -326,6 +326,14 @@
   }
 
   function buildDemand() {
+    /* 先聚合每个 SKU 的"已在途待生产"数量（已确认排产但未完工）。
+     * 已完工的不计，这样完工后若需求仍存在会自动重新出现在推荐清单里。 */
+    var pendingOnRoad = {};
+    (state.orders || []).forEach(function (o) {
+      if (o.状态 !== '待生产') return;
+      pendingOnRoad[o.物料编码] = (pendingOnRoad[o.物料编码] || 0) + (+o.计划数量 || 0);
+    });
+
     var byCode = {};
     function slot(code) {
       if (!byCode[code]) {
@@ -333,7 +341,7 @@
         byCode[code] = {
           code: code, name: m.物料名称 || '', series: m.产品系列 || '',
           base: m.产品形态 || '', pack: m.包装形式 || '', combo: comboOf(m),
-          sources: {}, dates: [], qty: 0, priority: 9
+          sources: {}, dates: [], qty: 0, priority: 9, pending: pendingOnRoad[code] || 0
         };
       }
       return byCode[code];
@@ -387,13 +395,17 @@
       r.sources['月计划'] = (r.sources['月计划'] || 0) + remain;
     });
 
-    /* 合并：取最大值，优先级 欠货1 > 紧急备货2 > 预警备货3 > 月计划4 */
+    /* 合并：取最大值，优先级 欠货1 > 紧急备货2 > 预警备货3 > 月计划4
+     * 再减去"已在途待生产"数量（已确认排产但未完工的订单计划数），
+     * 扣减后需求量 ≤ 0 的 SKU 不再进入推荐清单 —— 因为已经安排了 */
     var out = [];
     Object.keys(byCode).forEach(function (code) {
       var r = byCode[code];
       var vals = ['欠货', '备货', '月计划'].map(function (k) { return +r.sources[k] || 0; });
-      r.qty = Math.max.apply(null, vals);
-      if (r.qty <= 0) return;
+      var gross = Math.max.apply(null, vals);
+      if (gross <= 0) return;
+      r.qty = Math.max(0, gross - (r.pending || 0));
+      if (r.qty <= 0) return;  /* 需求量全部被已在途待生产覆盖，不再推荐 */
       r.priority = r.sources['欠货'] > 0 ? 1 : (r.sources['备货'] > 0 ? (r.备货等级 === '紧急' ? 2 : 3) : 4);
       r.date = r.dates.length ? r.dates.sort()[0] : (r.priority === 4 ? '' : addDays(state.cfg.start, 1));
       var lab = laborOf(code);
@@ -456,7 +468,8 @@
     state.demand.forEach(function (r) { remaining[r.code] = r.qty; });
     var maxHours = state.cfg.hours;
 
-    /* 已确认任务先占产能，并从剩余需求中扣除 */
+    /* 已确认任务先占产能（不再从 remaining 扣数量 —— buildDemand 已从"待生产订单"数量里扣过）
+     * 产能仍然必须占用，否则会导致同一天推荐数量超出产线实际可用产能 */
     var codeStarted = {};
     state.tasks.forEach(function (t) {
       if (t.状态 !== '已确认') return;
@@ -470,11 +483,6 @@
         sectionCode: t.工段编号 || t.sectionCode || '', status: '已确认'
       });
       byKey[taskKey(t.排产日期, t.物料编码)] = t;
-      if (remaining.hasOwnProperty(t.物料编码)) {
-        remaining[t.物料编码] = Math.max(0, remaining[t.物料编码] - (+t.计划数量 || 0));
-        var dr = state.demand.filter(function (x) { return x.code === t.物料编码; })[0];
-        if (dr) dr.scheduled += (+t.计划数量 || 0);
-      }
     });
 
     dates.forEach(function (d) {
@@ -580,6 +588,7 @@
     renderLineMap();
     renderDemand();
     renderDayTabsTop();
+    if (typeof updateDayFilterBtns === 'function') updateDayFilterBtns();
     renderSuggestions();
     renderDay();
     renderOrders();
@@ -912,6 +921,11 @@
       (dt[lineCode] || []).forEach(function (t) { allTasks.push(t); });
     });
     allTasks.sort(function (a, b) { return (a.priority || 9) - (b.priority || 9); });
+    /* 按筛选模式过滤卡片内任务：默认只看已确认；全部 = 已确认+建议 */
+    var mode = state.dayFilter || 'confirmed';
+    if (mode === 'confirmed') {
+      allTasks = allTasks.filter(function (t) { return t.status === '已确认'; });
+    }
     var groups = {};
     allTasks.forEach(function (t) {
       var info = sectionInfoOf(t.code);
@@ -921,7 +935,12 @@
     });
 
     if (!Object.keys(groups).length) {
-      body.innerHTML = '<div class="empty">该日暂无排产任务</div>';
+      var tip = mode === 'confirmed'
+        ? ((state.dayTasks[date] && Object.keys(state.dayTasks[date]).length)
+            ? '该日暂无已确认的排产任务（当前筛选「仅已确认」，点「全部」可同时看建议）'
+            : '该日暂无排产任务')
+        : '该日暂无排产任务';
+      body.innerHTML = '<div class="empty">' + tip + '</div>';
       return;
     }
 
@@ -1740,6 +1759,18 @@
       });
     }
 
+    /* 设备组卡片筛选按钮（默认「仅已确认」） */
+    var filterBar = document.querySelector('.sched-day-filter-bar');
+    if (filterBar) {
+      filterBar.addEventListener('click', function (e) {
+        var b = e.target.closest('.sched-day-filter[data-f]');
+        if (!b) return;
+        state.dayFilter = b.getAttribute('data-f');
+        updateDayFilterBtns();
+        renderDay();
+      });
+    }
+
     function applyQtyOverride(date, code, newQty) {
       var task = (state.dayTasks[date] || {})[lineOf(code)];
       task = task ? task.filter(function (t) { return t.code === code; })[0] : null;
@@ -1995,6 +2026,15 @@
     $('#sched-opening-import').addEventListener('click', function () { $('#sched-opening-file').value = ''; $('#sched-opening-file').click(); });
     $('#sched-opening-file').addEventListener('change', function () {
       if (this.files && this.files[0]) importOpening(this.files[0]);
+    });
+  }
+
+  function updateDayFilterBtns() {
+    document.querySelectorAll('.sched-day-filter').forEach(function (b) {
+      var isActive = b.getAttribute('data-f') === state.dayFilter;
+      b.classList.toggle('btn-primary', isActive);
+      b.classList.toggle('btn-ghost', !isActive);
+      b.classList.toggle('active', isActive);
     });
   }
 
