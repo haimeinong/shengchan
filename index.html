@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="库存看板">
-<link rel="stylesheet" href="assets/css/style.css?v=20261119b">
+<link rel="stylesheet" href="assets/css/style.css?v=20261119c">
 </head>
 <body>
 <div class="app">
@@ -1023,13 +1023,15 @@
         <label>计划数量(箱)<input type="text" id="sc-plan" readonly></label>
         <label>完工数量(箱)*<input type="number" id="sc-qty" min="0" step="1"></label>
         <label>完工日期*<input type="date" id="sc-date"></label>
+        <label>投料日期<input type="text" id="sc-invest-date" readonly></label>
         <label>班组（大写字母）<input type="text" id="sc-team" maxlength="2" placeholder="如 A"></label>
-        <label>批次号*<input type="text" id="sc-batch" maxlength="60" placeholder="物料编码+生产日期+班组"></label>
+        <label>批次号*<input type="text" id="sc-batch" maxlength="60" placeholder="物料编码+投料日期+班组"></label>
         <label>备注<input type="text" id="sc-remark" maxlength="80"></label>
       </div>
-      <div class="sched-tip" style="margin-top:10px">批次号默认按「物料编码+完工日期」生成，班组字母会自动追加，可手工修改。工完自动写入产能档案的每日实际产出。</div>
+      <div class="sched-tip" style="margin-top:10px">批次号默认按「物料编码+投料日期」生成，班组字母自动追加，可手工修改。确认完工后自动写入产能档案的每日实际产出。</div>
     </div>
     <div class="modal-foot">
+      <button class="btn btn-danger" id="sched-complete-delete" style="float:left">删除订单</button>
       <button class="btn" id="sched-complete-cancel">取消</button>
       <button class="btn btn-primary" id="sched-complete-save">确认完工</button>
     </div>
@@ -1042,12 +1044,12 @@
 <script src="assets/js/db.js?v=20261014a"></script>
 <script src="assets/js/import.js?v=20261014a"></script>
 <script src="assets/js/backup.js?v=20261014a"></script>
-<script src="assets/js/capacity.js?v=20261118b"></script>
+<script src="assets/js/capacity.js?v=20261119a"></script>
 <script src="assets/js/replenish.js?v=20261114a"></script>
 <script src="assets/js/plan.js?v=20261118a"></script>
 <script src="assets/js/semidemand.js?v=20261020b"></script>
-<script src="assets/js/schedule.js?v=20261119b"></script>
-<script src="assets/js/app.js?v=20261110a"></script>
+<script src="assets/js/schedule.js?v=20261119e"></script>
+<script src="assets/js/app.js?v=20261119a"></script>
 <script>
 /* PWA：仅在 http(s) 下注册 Service Worker（file:// 双击打开时不注册） */
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
