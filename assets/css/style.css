@@ -358,6 +358,19 @@ table.grid.edit td input:focus, table.grid.edit td select:focus { border-color: 
 }
 .inline-form input:disabled { background: #f1f5f9; color: #64748b; }
 .inline-form-actions { display: flex; gap: 8px; margin-left: auto; }
+/* 手动补充排产：物料搜索下拉 */
+.ma-code-label { flex: 1 1 100%; }
+.ma-code-label input[type=text] { width: 100%; min-width: 0; }
+.combo-hint { font-size: 12px; color: var(--text-2); padding: 2px 0; }
+.combo-list { max-height: 240px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 7px; background: #fff; }
+.combo-list:empty { display: none; }
+.combo-item { display: flex; align-items: center; gap: 10px; padding: 5px 9px; font-size: 12.5px; cursor: pointer; border-bottom: 1px solid #f1f5f9; }
+.combo-item:last-child { border-bottom: 0; }
+.combo-item:hover, .combo-item.active { background: #eef6ff; }
+.combo-item-code { font-family: ui-monospace, Menlo, Consolas, monospace; color: #334155; flex: 0 0 auto; }
+.combo-item-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #0f172a; }
+.combo-item-line { flex: 0 0 auto; font-size: 11.5px; color: #64748b; background: #f1f5f9; border-radius: 8px; padding: 1px 7px; }
+.combo-empty, .combo-more { padding: 8px 10px; font-size: 12px; color: #94a3b8; text-align: center; }
 .cap-out-form { gap: 10px 16px; }
 
 /* 产能矩阵 */
@@ -539,7 +552,7 @@ table.grid.edit td input:focus, table.grid.edit td select:focus { border-color: 
 .sched-line-select { padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 12.5px; background: #fff; min-width: 56px; }
 .sched-line-select.sched-line-unset { border-color: #f59e0b; background: #fffbeb; color: #b45309; }
 /* 需求清单长列省略号，避免横向滚动条 */
-#sched-demand-table td .cell-ellipsis { display: inline-block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.cell-ellipsis { display: inline-block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
 #sched-demand-table th:nth-child(4), #sched-demand-table td:nth-child(4) { max-width: 140px; }  /* 物料名称 */
 #sched-demand-table th:nth-child(11), #sched-demand-table td:nth-child(11) { max-width: 110px; } /* 工段 */
 #sched-demand-table th:nth-child(12), #sched-demand-table td:nth-child(12) { max-width: 110px; } /* 设备组 */
@@ -571,6 +584,14 @@ table.grid.edit td input:focus, table.grid.edit td select:focus { border-color: 
 .sched-load.over { color: #b91c1c; font-weight: 700; }
 .sched-line-card table.grid { width: 100%; }
 .sched-line-card table.grid th, .sched-line-card table.grid td { padding: 6px 8px; font-size: 12px; }
+/* 卡片内表格：固定列宽，避免物料编码撑宽导致物料名称偏右 */
+.sched-line-card table.sched-day-group-table { table-layout: fixed; }
+.sched-line-card table.sched-day-group-table th:nth-child(1),
+.sched-line-card table.sched-day-group-table td:nth-child(1) { width: 118px; }   /* 物料编码 */
+.sched-line-card table.sched-day-group-table th:nth-child(3),
+.sched-line-card table.sched-day-group-table td:nth-child(3) { width: 58px; }    /* 计划(箱) */
+.sched-line-card table.sched-day-group-table td:nth-child(1) { word-break: break-all; }  /* 长编码可换行 */
+.sched-line-card table.sched-day-group-table .sched-name-cell { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 /* 顶部日期切换按钮 */
 .sched-day-tab-btn { padding: 5px 12px; border: 1px solid var(--border); border-radius: 14px; background: #fff; color: inherit; cursor: pointer; font-size: 12.5px; margin-left: 6px; }
 .sched-day-tab-btn:first-child { margin-left: 0; }
