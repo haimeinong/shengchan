@@ -391,6 +391,9 @@ table.grid.edit td input:focus, table.grid.edit td select:focus { border-color: 
 .matrix-cell .cap-ref { color: var(--primary); }
 .matrix-cell .cap-act { color: var(--text-2); }
 .matrix-cell .cap-meta { font-size: 10.5px; color: #64748b; margin-top: 2px; border-top: 1px dashed #e2e8f0; padding-top: 2px; }
+/* 系统参考值：按近30天实际产出反算，仅作人工参考，不覆盖借鉴值 */
+.matrix-cell .cap-ref-auto { font-size: 11px; line-height: 1.6; color: #0f766e; background: #f0fdfa; border: 1px dashed #99f6e4; border-radius: 4px; padding: 1px 5px; margin-top: 3px; display: inline-block; cursor: help; }
+.cell-auto-ref { font-size: 11.5px; color: #0f766e; background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 6px; padding: 6px 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 /* 工段档案 工艺路线列 */
 .route-cell { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 12px; }
