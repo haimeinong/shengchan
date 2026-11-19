@@ -1048,8 +1048,21 @@
 <script src="assets/js/replenish.js?v=20261114a"></script>
 <script src="assets/js/plan.js?v=20261118a"></script>
 <script src="assets/js/semidemand.js?v=20261020b"></script>
-<script src="assets/js/schedule.js?v=20261119e"></script>
+<script src="assets/js/schedule.js?v=20261119f"></script>
 <script src="assets/js/app.js?v=20261119a"></script>
+<script>
+/* 版本自检：页面与脚本版本不一致时给出明确提示（常见于 JS 未上传或浏览器缓存旧脚本） */
+window.addEventListener('load', function () {
+  var EXPECT = '20261119f';
+  var got = window.SCHED_BUILD || '';
+  if (got === EXPECT) return;
+  console.error('[版本不一致] 期望 schedule.js ' + EXPECT + '，实际 ' + (got || '未定义'));
+  var bar = document.createElement('div');
+  bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#b91c1c;color:#fff;font-size:13px;padding:8px 12px;text-align:center';
+  bar.textContent = '页面与脚本版本不一致（schedule.js: ' + (got || '旧版本') + '）。请按 Ctrl+Shift+R 强制刷新；若仍提示，请检查 GitHub 上 assets/js/schedule.js 是否已更新。';
+  document.body.appendChild(bar);
+});
+</script>
 <script>
 /* PWA：仅在 http(s) 下注册 Service Worker（file:// 双击打开时不注册） */
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
