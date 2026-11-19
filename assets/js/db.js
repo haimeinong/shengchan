@@ -38,7 +38,7 @@
   'use strict';
 
   var DB_NAME = 'inventory_dashboard';
-  var DB_VERSION = 5;
+  var DB_VERSION = 6;
 
   var STORES = {
     material:      { name: 'mdl_material',      keyPath: '物料编码' },
@@ -53,6 +53,7 @@
     line_map:      { name: 'dim_line_map',      keyPath: ['产品形态', '包装形式'] },
     schedule:      { name: 'fact_schedule_task', keyPath: ['排产日期', '物料编码'] },
     prodorder:     { name: 'fact_prod_order',   keyPath: 'id', auto: true },
+    form_option:   { name: 'dim_form_option',   keyPath: ['库存属性', '值'] },
     oplog:         { name: 'op_log',            keyPath: 'id', auto: true }
   };
 

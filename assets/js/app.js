@@ -5,7 +5,7 @@
   'use strict';
 
   /* ---------------- 全局状态 ---------------- */
-  var state = { materials: [], stocks: [], backorders: [], logs: [], bomLinks: [], matMap: {}, view: 'stock' };
+  var state = { materials: [], stocks: [], backorders: [], logs: [], bomLinks: [], matMap: {}, formOpts: { '成品': [], '半成品': [] }, view: 'stock' };
   var BO_STATUSES = ['待排产', '排产中', '可发货', '已结清'];
 
   function $(sel, root) { return (root || document).querySelector(sel); }
@@ -36,6 +36,44 @@
     setTimeout(function () { el.remove(); }, 3000);
   }
 
+  /* ---------------- 产品形态字典（按库存属性分别维护） ---------------- */
+  var FORM_OPT_DEFAULTS = {
+    '成品': ['粉料', '块料', '酱料', '原始香辛料', '液态', '分装'],
+    '半成品': []
+  };
+  function loadFormOptions() {
+    return DB.all('form_option').then(function (rows) {
+      rows = rows || [];
+      if (!rows.length) {
+        /* 首次使用：写入成品默认值（半成品留空，由用户自行维护）。用本地标记避免清空后又被重置 */
+        var seeded = false;
+        try { seeded = localStorage.getItem('ks_formopt_seeded') === '1'; } catch (e) {}
+        if (seeded) return rows;
+        try { localStorage.setItem('ks_formopt_seeded', '1'); } catch (e) {}
+        var seed = FORM_OPT_DEFAULTS['成品'].map(function (v, i) {
+          return { 库存属性: '成品', 值: v, 排序: i + 1, 更新时间: '' };
+        });
+        return DB.bulkPut('form_option', seed).then(function () { return seed; });
+      }
+      return rows;
+    }).then(function (rows) {
+      state.formOpts = { '成品': [], '半成品': [] };
+      rows.slice().sort(function (a, b) {
+        return (+a.排序 || 999) - (+b.排序 || 999) || String(a.值).localeCompare(String(b.值), 'zh-CN');
+      }).forEach(function (r) {
+        var k = r.库存属性 === '半成品' ? '半成品' : '成品';
+        state.formOpts[k].push(r.值);
+      });
+    });
+  }
+  /* 取某库存属性下可选的 产品形态 列表 */
+  function formOptsOf(attr) {
+    var k = attr === '半成品' ? '半成品' : '成品';
+    var list = state.formOpts[k] || [];
+    /* 字典未装载时退回默认值，避免下拉为空 */
+    return list.length ? list : (k === '成品' ? FORM_OPT_DEFAULTS['成品'] : []);
+  }
+
   /* ---------------- 数据装载 ---------------- */
   function reload() {
     movesCache = {};   /* 数据重载后，流水推算缓存失效，下次渲染时重建 */
@@ -48,12 +86,19 @@
         state.bomLinks = r[4];
         state.matMap = {};
         r[0].forEach(function (m) { state.matMap[m.物料编码] = m; });
+        return loadFormOptions();
       });
   }
 
   /* 视图懒渲染：数据变化后只立即重绘"当前视图"，其余视图在切换到它时再渲染。
      renderedView 记录哪些视图的 DOM 与当前 state 是一致的，避免每次数据变更都全量重建 8 个视图。 */
   var renderedView = {};
+
+  /* 供排产等模块写入物料后，刷新主视图数据与渲染标记 */
+  window.AppData = {
+    reload: reload,
+    invalidate: function () { renderedView = {}; }
+  };
 
   function renderView(v) {
     switch (v) {
@@ -1427,7 +1472,7 @@
           + '<td class="ro">' + esc(m.规格型号 || '') + '</td>'
           + '<td class="ro">' + esc(m.箱规 || '') + '</td>'
           + '<td class="ro">' + esc(m.库存属性 || '—') + '</td>'
-          + '<td>' + selectVal(['', '粉料', '块料', '酱料', '原始香辛料'], m.产品形态, '产品形态') + '</td>'
+          + '<td>' + selectVal(formSelectOptsOf(m), m.产品形态, '产品形态') + '</td>'
           + matInput(m, '包装形式')
           + '<td class="ro">' + esc(m.主单位 || '—') + '</td>'
           + matInput(m, '安全水位') + matInput(m, '目标库存天数')
@@ -1454,6 +1499,14 @@
         }
       });
     });
+  }
+
+  /* 行内 产品形态 下拉选项：按库存属性取字典；物料已有值不在字典时保留，避免编辑旧数据被清空 */
+  function formSelectOptsOf(m) {
+    var opts = [''].concat(formOptsOf(m.库存属性));
+    var v = m.产品形态;
+    if (v && opts.indexOf(v) < 0) opts.push(v);
+    return opts;
   }
 
   function matInput(m, f) {
@@ -1484,6 +1537,19 @@
   /* ---------------- 物料编辑弹窗（新增 / 详细编辑共用，含 产品系列/子分类 分组字段） ---------------- */
   function meEl(f) { return document.getElementById('me-' + f); }  /* id 含括号，用 getElementById 而非 querySelector */
 
+  /* 按库存属性重填 产品形态 下拉（保留仍有效的当前值） */
+  function fillFormSelect(attr, val) {
+    var sel = meEl('产品形态');
+    if (!sel) return;
+    var opts = [''].concat(formOptsOf(attr));
+    var keep = (val != null ? val : sel.value);
+    /* 当前值不在字典中时仍保留，避免编辑旧数据时被清空 */
+    if (keep && opts.indexOf(keep) < 0) opts.push(keep);
+    sel.innerHTML = opts.map(function (o) {
+      return '<option value="' + esc(o) + '" ' + (m_eq(o, keep) ? 'selected' : '') + '>' + (o || '未填') + '</option>';
+    }).join('');
+  }
+
   function openMatEditor(code) {
     var isNew = !code;
     var m = isNew ? {} : (state.matMap[code] || {});
@@ -1492,6 +1558,7 @@
       var el = meEl(f);
       if (el) el.value = m[f] == null ? '' : m[f];
     });
+    fillFormSelect(m.库存属性 || '成品', m.产品形态 || '');
     var codeEl = meEl('物料编码');
     codeEl.readOnly = !isNew;
     codeEl.classList.toggle('ro-input', !isNew);
@@ -1519,6 +1586,63 @@
     }).catch(function (e) { toast('保存失败：' + (e.message || e), 'err'); });
   }
 
+  /* ---------------- 产品形态字典维护（按库存属性分别维护） ---------------- */
+  function openFormOptEditor() {
+    renderFormOptLists();
+    $('#form-opt-mask').hidden = false;
+  }
+  function closeFormOptEditor() { $('#form-opt-mask').hidden = true; }
+
+  function renderFormOptLists() {
+    ['成品', '半成品'].forEach(function (attr) {
+      var box = document.getElementById('fo-list-' + attr);
+      if (!box) return;
+      var list = formOptsOf(attr);
+      box.innerHTML = list.length
+        ? list.map(function (v) {
+            return '<span class="fo-chip">' + esc(v)
+              + '<button class="fo-del" data-attr="' + esc(attr) + '" data-val="' + esc(v) + '" title="删除">✕</button></span>';
+          }).join('')
+        : '<span class="fo-empty">暂无维护值' + (attr === '半成品' ? '（可按需自行添加）' : '') + '</span>';
+    });
+  }
+
+  function addFormOpt(attr) {
+    var input = document.getElementById('fo-input-' + attr);
+    var v = String((input && input.value) || '').trim();
+    if (!v) { toast('请输入产品形态名称', 'warn'); return; }
+    if (formOptsOf(attr).indexOf(v) >= 0) { toast('该值已存在', 'warn'); return; }
+    var rec = { 库存属性: attr, 值: v, 排序: formOptsOf(attr).length + 1, 更新时间: todayStr() };
+    DB.put('form_option', rec)
+      .then(function () { return DB.log({ 操作类型: '产品形态字典新增', 详情: { 库存属性: attr, 值: v } }); })
+      .then(loadFormOptions)
+      .then(function () {
+        input.value = '';
+        renderFormOptLists();
+        renderMaterial();
+        toast('已添加「' + v + '」到' + attr, 'ok');
+      })
+      .catch(function (e) { toast('添加失败：' + (e.message || e), 'err'); });
+  }
+
+  function delFormOpt(attr, v) {
+    var used = state.materials.filter(function (m) {
+      var k = m.库存属性 === '半成品' ? '半成品' : '成品';
+      return k === attr && m.产品形态 === v;
+    }).length;
+    if (used) { toast('有 ' + used + ' 个' + attr + '物料正在使用「' + v + '」，不能删除', 'err'); return; }
+    if (!confirm('确认删除' + attr + '的「' + v + '」？')) return;
+    DB.del('form_option', [attr, v])
+      .then(function () { return DB.log({ 操作类型: '产品形态字典删除', 详情: { 库存属性: attr, 值: v } }); })
+      .then(loadFormOptions)
+      .then(function () {
+        renderFormOptLists();
+        renderMaterial();
+        toast('已删除「' + v + '」', 'ok');
+      })
+      .catch(function (e) { toast('删除失败：' + (e.message || e), 'err'); });
+  }
+
   function initMaterial() {
     $('#btn-mat-add').addEventListener('click', function () { openMatEditor(null); });
     $('#btn-mat-export').addEventListener('click', exportMaterialXLSX);
@@ -1526,6 +1650,24 @@
     $('#mat-edit-cancel').addEventListener('click', closeMatEditor);
     $('#mat-edit-mask').addEventListener('click', function (e) { if (e.target === this) closeMatEditor(); });
     $('#mat-search').addEventListener('input', renderMaterial);
+    /* 产品形态字典维护 */
+    $('#btn-mat-form-opt').addEventListener('click', openFormOptEditor);
+    $('#form-opt-close').addEventListener('click', closeFormOptEditor);
+    $('#form-opt-cancel').addEventListener('click', closeFormOptEditor);
+    $('#form-opt-mask').addEventListener('click', function (e) { if (e.target === this) closeFormOptEditor(); });
+    ['成品', '半成品'].forEach(function (attr) {
+      var addBtn = document.getElementById('fo-add-' + attr);
+      var input = document.getElementById('fo-input-' + attr);
+      if (addBtn) addBtn.addEventListener('click', function () { addFormOpt(attr); });
+      if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') addFormOpt(attr); });
+    });
+    $('#form-opt-lists').addEventListener('click', function (e) {
+      var b = e.target.closest('.fo-del');
+      if (!b) return;
+      delFormOpt(b.getAttribute('data-attr'), b.getAttribute('data-val'));
+    });
+    /* 库存属性变化时，产品形态下拉切换为对应字典 */
+    meEl('库存属性').addEventListener('change', function () { fillFormSelect(this.value, ''); });
     /* 库存属性快速筛选（分段按钮） */
     var seg = $('#mat-attr-filter');
     if (seg) {

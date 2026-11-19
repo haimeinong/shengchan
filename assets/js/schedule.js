@@ -11,7 +11,7 @@
   'use strict';
 
   /* 构建标识：与 index.html 中 schedule.js?v= 保持一致，便于排查"页面已更新但脚本仍是旧缓存"的问题 */
-  global.SCHED_BUILD = '20261119f';
+  global.SCHED_BUILD = '20261119g';
   try { console.info('[排产] schedule.js 构建 ' + global.SCHED_BUILD); } catch (e) {}
 
   /* ---------------- 通用工具 ---------------- */
@@ -58,7 +58,9 @@
     '原始香辛料': { line: 'L01', section: '' },
     '粉料': { line: 'L02', section: '' },
     '块料': { line: 'L02', section: '' },
-    '酱料': { line: 'L03', section: '' }
+    '酱料': { line: 'L03', section: '' },
+    '液态': { line: 'L04', section: '' },
+    '分装': { line: 'L05', section: '' }
   };
 
   function lineByCode(code) {
