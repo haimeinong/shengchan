@@ -11,7 +11,7 @@
   'use strict';
 
   /* 构建标识：与 index.html 中 schedule.js?v= 保持一致，便于排查"页面已更新但脚本仍是旧缓存"的问题 */
-  global.SCHED_BUILD = '20261119j';
+  global.SCHED_BUILD = '20261119m';
   try { console.info('[排产] schedule.js 构建 ' + global.SCHED_BUILD); } catch (e) {}
 
   /* ---------------- 通用工具 ---------------- */
@@ -914,11 +914,26 @@
     if (!dates.length) { body.innerHTML = ''; return; }
 
     var date = state.dayTab;
-    /* 按设备组分组（只看当天） */
+    /* 建议的排产任务（按排产日期 = 当天） */
     var allTasks = [];
     var dt = state.dayTasks[date] || {};
     Object.keys(dt).forEach(function (lineCode) {
-      (dt[lineCode] || []).forEach(function (t) { allTasks.push(t); });
+      (dt[lineCode] || []).forEach(function (t) {
+        /* 只取状态=建议的；已确认的改从订单表按投料日期取 */
+        if (t.status === '建议') allTasks.push(t);
+      });
+    });
+    /* 已确认/已完工的订单，按订单里的投料日期匹配当天 */
+    (state.orders || []).forEach(function (o) {
+      var invest = o.投料日期 || o.排产日期 || '';
+      if (invest !== date) return;
+      if (o.状态 !== '待生产' && o.状态 !== '已完工') return;
+      allTasks.push({
+        date: date, line: o.生产线 || '', code: o.物料编码,
+        qty: +o.计划数量 || 0, hours: 0, priority: 9, source: (o.类型 === '期初' ? '期初' : '排产'),
+        sectionCode: o.工段编号 || '', status: o.状态 === '已完工' ? '已完工' : '已确认',
+        orderId: o.id, investDate: invest
+      });
     });
     allTasks.sort(function (a, b) { return (a.priority || 9) - (b.priority || 9); });
     /* 按筛选模式过滤卡片内任务：默认只看已确认；全部 = 已确认+建议 */
@@ -1175,13 +1190,17 @@
       return (b.id || 0) - (a.id || 0);
     });
     if (!list.length) {
-      tb.innerHTML = '<tr><td colspan="12" class="empty">暂无生产订单（按天确认排产后自动生成）</td></tr>';
+      tb.innerHTML = '<tr><td colspan="13" class="empty">暂无生产订单（按天确认排产后自动生成）</td></tr>';
       return;
     }
     tb.innerHTML = list.map(function (o) {
-      var op = o.状态 === '待生产'
-        ? '<button class="btn btn-primary btn-sm sched-complete-btn" data-id="' + o.id + '">完工录入</button>'
-        : '<span class="muted">—</span>';
+      var op = '';
+      if (o.状态 === '待生产') {
+        op += '<button class="btn btn-sm sched-complete-btn" data-id="' + o.id + '">编辑</button> ';
+        op += '<button class="btn btn-primary btn-sm sched-complete-btn" data-complete="' + o.id + '">完工录入</button>';
+      } else {
+        op += '<button class="btn btn-sm sched-complete-btn" data-id="' + o.id + '">编辑</button>';
+      }
       return '<tr class="' + (o.类型 === '期初' ? 'muted' : '') + '">'
         + '<td class="code">' + esc(o.订单号 || '—') + '</td>'
         + '<td>' + esc(o.排产日期 || '—') + '</td>'
@@ -1193,12 +1212,46 @@
         + '<td class="code">' + (o.批次号 ? '<span class="sched-batch-tag">' + esc(o.批次号) + '</span>' : '—') + '</td>'
         + '<td>' + esc(o.班组 || '—') + '</td>'
         + '<td>' + esc(o.生产日期 || '—') + '</td>'
+        + '<td>' + esc(o.投料日期 || '—') + '</td>'
         + '<td>' + (o.状态 === '已完工' ? '<span class="repl-badge ok">已完工</span>' : '<span class="repl-badge warn">待生产</span>') + '</td>'
         + '<td class="sched-order-op">' + op + '</td></tr>';
     }).join('');
   }
 
-  /* ---------------- 完工录入（批次号） ---------------- */
+  /* ---------------- 完工录入 / 订单编辑（共用弹窗） ---------------- */
+  function setCompleteMode(mode, o) {
+    /* mode: 'edit' 只存投料调整；'complete' 含完工保存 */
+    var isComplete = mode === 'complete';
+    $('#sc-batch').disabled = isComplete ? false : true;
+    $('#sc-date').disabled = isComplete ? false : true;
+    $('#sc-qty').disabled = isComplete ? false : true;
+    $('#sc-team').disabled = isComplete ? false : true;
+    $('#sc-mode-tag').textContent = isComplete ? '完工录入' : '订单编辑（投料调整）';
+    $('#sched-complete-save').textContent = isComplete ? '保存完工' : '保存投料调整';
+    $('#sched-complete-save').style.background = isComplete ? '' : 'var(--primary,#1d4ed8)';
+    /* 已完工订单不显示「删除」按钮（删除已完工订单需要处理产出回滚，暂不开放）；待生产订单可删 */
+    $('#sched-complete-delete').style.display = (o && o.状态 === '已完工') ? 'none' : '';
+  }
+
+  function openEdit(id) {
+    var o = state.orders.filter(function (x) { return String(x.id) === String(id); })[0];
+    if (!o) { toast('订单不存在', 'err'); return; }
+    state.completeOrder = o;
+    state.batchDirty = true;  /* 编辑模式下不自动重算批次号 */
+    $('#sc-order-no').value = o.订单号 || '';
+    $('#sc-mat').value = (o.物料编码 || '') + ' ' + (o.物料名称 || '');
+    $('#sc-plan').value = o.计划数量 == null ? '' : o.计划数量;
+    $('#sc-qty').value = o.计划数量 == null ? '' : o.计划数量;
+    $('#sc-date').value = o.生产日期 || '';
+    $('#sc-team').value = o.班组 || '';
+    $('#sc-batch').value = o.批次号 || '';
+    $('#sc-remark').value = o.备注 || '';
+    state.batchBaseDate = o.投料日期 || o.排产日期 || o.生产日期 || todayStr();
+    $('#sc-invest-date').value = state.batchBaseDate;
+    setCompleteMode('edit', o);
+    $('#sched-complete-mask').hidden = false;
+  }
+
   function openComplete(id) {
     var o = state.orders.filter(function (x) { return String(x.id) === String(id); })[0];
     if (!o) { toast('订单不存在', 'err'); return; }
@@ -1211,11 +1264,11 @@
     $('#sc-date').value = todayStr();
     $('#sc-team').value = '';
     $('#sc-remark').value = o.备注 || '';
-    /* 投料日期：取排产日期（无则用完工日期兜底），批次号的日期部分固定按投料日期 */
-    state.batchBaseDate = o.排产日期 || o.生产日期 || todayStr();
+    /* 投料日期：优先用订单已存的投料日期，否则退回排产日期 → 生产日期 → 今天；批次号的日期部分固定按投料日期 */
+    state.batchBaseDate = o.投料日期 || o.排产日期 || o.生产日期 || todayStr();
     $('#sc-invest-date').value = state.batchBaseDate;
     $('#sc-batch').value = suggestBatch(o.物料编码, state.batchBaseDate, '');
-    $('#sched-complete-delete').style.display = o.状态 === '待生产' ? '' : 'none';
+    setCompleteMode('complete', o);
     $('#sched-complete-mask').hidden = false;
   }
   function closeComplete() {
@@ -1231,12 +1284,18 @@
   function saveComplete() {
     var o = state.completeOrder;
     if (!o) return;
+    var mode = $('#sc-mode-tag').textContent || '';
+    /* 编辑模式：只存投料日期/批次号/班组/备注等字段，不改订单状态 */
+    if (mode.indexOf('订单编辑') >= 0) return saveEdit(o);
+
     var qty = parseFloat($('#sc-qty').value);
     var date = $('#sc-date').value;
+    var invest = $('#sc-invest-date').value;
     var team = String($('#sc-team').value || '').trim().toUpperCase();
     var batch = String($('#sc-batch').value || '').trim();
     if (!(qty >= 0)) { toast('完工数量需为不小于 0 的数字', 'err'); return; }
     if (!date) { toast('请选择完工日期', 'err'); return; }
+    if (!invest) { toast('请选择投料日期', 'err'); return; }
     if (!batch) { toast('请填写批次号', 'err'); return; }
     if (team && !/^[A-Z]{1,2}$/.test(team)) { toast('班组请填写 1~2 个大写英文字母', 'err'); return; }
     var dup = state.orders.filter(function (x) {
@@ -1247,6 +1306,7 @@
     var rec = Object.assign({}, o);
     rec.完工数量 = qty;
     rec.生产日期 = date;
+    rec.投料日期 = invest;
     rec.班组 = team;
     rec.批次号 = batch;
     rec.状态 = '已完工';
@@ -1281,6 +1341,62 @@
         toast('完工已保存，批次号 ' + batch + (outRow ? '；已写入实际产出' : '（未写产出：缺工段编号）'), 'ok');
       })
       .catch(function (e) { toast('完工保存失败：' + (e.message || e), 'err'); });
+  }
+
+  /* 订单编辑（只存投料日期、计划数量、班组、批次号、备注等；不改订单状态） */
+  function saveEdit(o) {
+    var invest = $('#sc-invest-date').value;
+    var planQty = parseFloat($('#sc-plan').value);
+    var team = String($('#sc-team').value || '').trim().toUpperCase();
+    var batch = String($('#sc-batch').value || '').trim();
+    var remark = $('#sc-remark').value.trim();
+    if (!invest) { toast('请选择投料日期', 'err'); return; }
+    if (!(planQty > 0)) { toast('计划数量需为正数', 'err'); return; }
+    if (team && !/^[A-Z]{1,2}$/.test(team)) { toast('班组请填写 1~2 个大写英文字母', 'err'); return; }
+    if (!batch) { toast('请填写批次号', 'err'); return; }
+    var dup = state.orders.filter(function (x) {
+      return x.id !== o.id && x.批次号 === batch && x.物料编码 === o.物料编码;
+    });
+    if (dup.length) { toast('批次号「' + batch + '」在该物料下已存在', 'err'); return; }
+
+    /* 计划数量变化 → 联动调整计划补货数量差额 */
+    var planDiff = (+planQty || 0) - (+o.计划数量 || 0);
+    var planReplenishTask = Promise.resolve();
+    if (o.已记计划补货 && planDiff !== 0) {
+      planReplenishTask = adjustReplenish(o.物料编码, planDiff, '编辑订单计划数量 ' + (o.订单号 || ''));
+    }
+
+    var ts = nowStr();
+    var rec = Object.assign({}, o);
+    var oldInvest = o.投料日期 || '';
+    rec.投料日期 = invest;
+    rec.计划数量 = planQty;
+    rec.班组 = team;
+    rec.批次号 = batch;
+    rec.备注 = remark;
+    /* 只在变化时记录 修改记录 */
+    if (invest !== oldInvest || (+planQty || 0) !== (+o.计划数量 || 0) || team !== (o.班组 || '') || batch !== (o.批次号 || '') || remark !== (o.备注 || '')) {
+      rec.修改记录 = (o.修改记录 || []).concat([{
+        时间: ts,
+        内容: '订单编辑：投料日期 ' + (oldInvest || '—') + '→' + invest
+          + '；计划数量 ' + (o.计划数量 || '—') + '→' + planQty
+          + '；班组 ' + (o.班组 || '—') + '→' + (team || '—')
+          + '；批次号 ' + (o.批次号 || '—') + '→' + batch
+      }]);
+    }
+
+    planReplenishTask
+      .then(function () { return DB.put('prodorder', rec); })
+      .then(syncAppData)
+      .then(function () {
+        return DB.log({ 操作类型: '生产订单编辑', 详情: { 订单号: o.订单号, 物料编码: o.物料编码, 投料日期: invest, 旧投料日期: oldInvest, 计划数量: planQty, 班组: team, 批次号: batch } });
+      })
+      .then(refresh)
+      .then(function () {
+        closeComplete();
+        toast('已保存：投料日期调整为 ' + invest + (invest !== oldInvest ? '，设备组卡片已同步更新' : ''), 'ok');
+      })
+      .catch(function (e) { toast('保存失败：' + (e.message || e), 'err'); });
   }
 
   /* 删除订单（取消生产）：删订单 + 排产任务回退为建议 + 扣回计划补货数量 */
@@ -1987,7 +2103,11 @@
     $('#sched-order-search').addEventListener('input', function () { state.orderKeyword = this.value.trim(); renderOrders(); });
     $('#sched-order-table').addEventListener('click', function (e) {
       var btn = e.target.closest('.sched-complete-btn');
-      if (btn) openComplete(btn.getAttribute('data-id'));
+      if (btn) {
+        var completeId = btn.getAttribute('data-complete');
+        if (completeId) openComplete(completeId);
+        else openEdit(btn.getAttribute('data-id'));
+      }
     });
 
     $('#sched-batch-search').addEventListener('input', function () { state.batchKeyword = this.value.trim(); renderBatches(); });
@@ -2016,10 +2136,15 @@
     function syncBatch() {
       var o = state.completeOrder;
       if (!o || state.batchDirty) return;
-      /* 日期部分固定用投料日期，仅班组字母变化时重算 */
+      /* 日期部分固定用投料日期，班组字母变化时重算 */
       $('#sc-batch').value = suggestBatch(o.物料编码, state.batchBaseDate, $('#sc-team').value);
     }
     $('#sc-team').addEventListener('input', syncBatch);
+    $('#sc-invest-date').addEventListener('change', function () {
+      state.batchBaseDate = this.value;
+      state.batchDirty = false;  /* 投料日期变了，允许重算批次号 */
+      syncBatch();
+    });
     $('#sc-batch').addEventListener('input', function () { state.batchDirty = true; });
 
     $('#sched-opening-tpl').addEventListener('click', downloadTemplate);
