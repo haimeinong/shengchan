@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="库存看板">
-<link rel="stylesheet" href="assets/css/style.css?v=20261119d">
+<link rel="stylesheet" href="assets/css/style.css?v=20261119e">
 </head>
 <body>
 <div class="app">
@@ -803,6 +803,11 @@
             </div>
           </div>
           <div class="panel-foot" id="sched-suggest-foot"></div>
+          <div class="sched-day-filter-bar">
+            <span class="sched-day-filter-label">设备组卡片筛选</span>
+            <button class="btn btn-sm sched-day-filter" data-f="confirmed">仅已确认</button>
+            <button class="btn btn-sm sched-day-filter" data-f="all">全部（已确认+建议）</button>
+          </div>
           <div class="panel-body" id="sched-day-body" style="padding:12px 0"><div class="empty">暂无排产建议，请先点「生成/刷新排产建议」</div></div>
         </div>
 
@@ -1078,12 +1083,12 @@
 <script src="assets/js/replenish.js?v=20261114a"></script>
 <script src="assets/js/plan.js?v=20261118a"></script>
 <script src="assets/js/semidemand.js?v=20261020b"></script>
-<script src="assets/js/schedule.js?v=20261119g"></script>
+<script src="assets/js/schedule.js?v=20261119j"></script>
 <script src="assets/js/app.js?v=20261119b"></script>
 <script>
 /* 版本自检：页面与脚本版本不一致时给出明确提示（常见于 JS 未上传或浏览器缓存旧脚本） */
 window.addEventListener('load', function () {
-  var EXPECT = '20261119g';
+  var EXPECT = '20261119j';
   var got = window.SCHED_BUILD || '';
   if (got === EXPECT) return;
   console.error('[版本不一致] 期望 schedule.js ' + EXPECT + '，实际 ' + (got || '未定义'));

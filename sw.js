@@ -1,6 +1,6 @@
 /* 库存看板 Service Worker：network-first 缓存。
  * 优先走网络（保证 ?v= 版本更新立即生效），离线时回退缓存；不预缓存业务数据。 */
-var CACHE = 'ks-dashboard-v8-20261119';
+var CACHE = 'ks-dashboard-v9-20261119';
 
 self.addEventListener('install', function (e) { self.skipWaiting(); });
 
