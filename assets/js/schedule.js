@@ -10,6 +10,10 @@
 (function (global) {
   'use strict';
 
+  /* 构建标识：与 index.html 中 schedule.js?v= 保持一致，便于排查"页面已更新但脚本仍是旧缓存"的问题 */
+  global.SCHED_BUILD = '20261119f';
+  try { console.info('[排产] schedule.js 构建 ' + global.SCHED_BUILD); } catch (e) {}
+
   /* ---------------- 通用工具 ---------------- */
   function $(s, r) { return (r || document).querySelector(s); }
   function $$(s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
@@ -995,7 +999,7 @@
         计划数量: +t.qty || 0, 优先级: +t.priority || 9, 来源: t.source || '',
         工段编号: info.sectionCode || '', 工段名称: info.sectionName || '',
         设备类型: info.deviceType || '',
-        单件工时: r ? round2(r.unitHours) : 0, 所需工时: round2(t.hours || 0),
+        单件工时: round2(t.unitHours || (r ? r.unitHours : 0)), 所需工时: round2(t.hours || 0),
         状态: '建议', 确认人: '', 确认时间: '',
         修改记录: [], 备注: '', 创建时间: now, 更新时间: now
       };
@@ -1003,6 +1007,31 @@
     var keys = rows.map(function (r) { return [r.排产日期, r.物料编码]; });
     return Promise.all(keys.map(function (k) { return DB.del('schedule', k); }))
       .then(function () { return DB.bulkPut('schedule', rows); });
+  }
+
+  /* 联动「成品物料主数据与出入库对比」的计划补货数量：
+   * 确认排产(+计划数量) / 撤销确认(-计划数量) / 完工录入(-计划数量)，结果 ≤0 时置空 */
+  function adjustReplenish(code, delta, reason) {
+    if (!delta) return Promise.resolve();
+    return DB.get('material', code).then(function (m) {
+      if (!m) return;
+      var cur = (m.计划补货数量 === '' || m.计划补货数量 == null) ? 0 : +m.计划补货数量;
+      var next = round2(cur + delta);
+      m.计划补货数量 = next > 0 ? next : '';
+      return DB.put('material', m).then(function () {
+        if (state.matMap[code]) state.matMap[code].计划补货数量 = m.计划补货数量;
+        return DB.log({
+          操作类型: '计划补货数量联动',
+          详情: { 物料编码: code, 变更: delta, 结果: m.计划补货数量, 原因: reason || '' }
+        });
+      });
+    });
+  }
+
+  /* 物料计划补货数量变更后，让主视图（库存流水/数据对比）重新加载并重绘 */
+  function syncAppData() {
+    if (!window.AppData) return Promise.resolve();
+    return window.AppData.reload().then(function () { window.AppData.invalidate(); });
   }
 
   /* 从已持久化的 schedule 记录里为这些任务生成生产订单，然后把状态改已确认 */
@@ -1022,6 +1051,8 @@
     tasks.forEach(function (t) {
       var m = state.matMap[t.code] || {};
       var info = sectionInfoOf(t.code);
+      var dr = state.demand.filter(function (x) { return x.code === t.code; })[0];
+      var unitHours = +(t.unitHours || (dr ? dr.unitHours : laborOf(t.code).unitHours) || 0);
       var num = pad3(++max);
       orders.push({
         订单号: prefix + num, 批次号: '', 物料编码: t.code, 物料名称: m.物料名称 || '',
@@ -1029,7 +1060,8 @@
         工段编号: info.sectionCode || '', 工段名称: info.sectionName || '', 设备类型: info.deviceType || '',
         生产日期: '', 计划数量: +t.qty || 0, 完工数量: '', 班组: '',
         类型: '生产', 状态: '待生产', 排产日期: date,
-        单件工时: t.unitHours || 0, 备注: '', 创建时间: ts, 完工时间: '', 修改记录: []
+        单件工时: round2(unitHours), 备注: '', 创建时间: ts, 完工时间: '', 修改记录: [],
+        已记计划补货: true   /* 确认时已把计划数量计入物料「计划补货数量」，完工/撤销时按此标记扣回 */
       });
     });
     /* 改状态：先把这些建议任务落库为已确认 */
@@ -1046,6 +1078,13 @@
     return Promise.all(confirmed).then(function () {
       return DB.bulkPut('prodorder', orders);
     }).then(function () {
+      /* 计划数写入计划补货数量（同一物料多条则累加） */
+      var byCode = {};
+      orders.forEach(function (o) { byCode[o.物料编码] = (byCode[o.物料编码] || 0) + (+o.计划数量 || 0); });
+      return Promise.all(Object.keys(byCode).map(function (code) {
+        return adjustReplenish(code, byCode[code], '排产确认 ' + date);
+      }));
+    }).then(syncAppData).then(function () {
       return DB.log({ 操作类型: '排产确认', 详情: { 日期: date, 任务数: tasks.length, 订单数: orders.length, 确认人: confirmer } });
     });
   }
@@ -1083,6 +1122,18 @@
     tasks.forEach(function (t) { t.状态 = '建议'; t.确认人 = ''; t.确认时间 = ''; });
     Promise.all(orders.map(function (o) { return DB.del('prodorder', o.id); }))
       .then(function () { return Promise.all(tasks.map(function (t) { return DB.put('schedule', t); })); })
+      .then(function () {
+        /* 撤销确认：把当时加进计划补货数量的计划值扣回（仅新逻辑生成的订单） */
+        var byCode = {};
+        orders.forEach(function (o) {
+          if (!o.已记计划补货) return;
+          byCode[o.物料编码] = (byCode[o.物料编码] || 0) + (+o.计划数量 || 0);
+        });
+        return Promise.all(Object.keys(byCode).map(function (code) {
+          return adjustReplenish(code, -byCode[code], '撤销排产确认 ' + date);
+        }));
+      })
+      .then(syncAppData)
       .then(function () { return DB.log({ 操作类型: '排产撤销确认', 详情: { 日期: date, 任务数: tasks.length, 删除订单: orders.length } }); })
       .then(function () { return loadAll(); })
       .then(function () { refresh(); toast('已撤销当天确认，订单已删除', 'ok'); })
@@ -1139,17 +1190,22 @@
     $('#sc-date').value = todayStr();
     $('#sc-team').value = '';
     $('#sc-remark').value = o.备注 || '';
-    $('#sc-batch').value = suggestBatch(o.物料编码, todayStr(), '');
+    /* 投料日期：取排产日期（无则用完工日期兜底），批次号的日期部分固定按投料日期 */
+    state.batchBaseDate = o.排产日期 || o.生产日期 || todayStr();
+    $('#sc-invest-date').value = state.batchBaseDate;
+    $('#sc-batch').value = suggestBatch(o.物料编码, state.batchBaseDate, '');
+    $('#sched-complete-delete').style.display = o.状态 === '待生产' ? '' : 'none';
     $('#sched-complete-mask').hidden = false;
   }
   function closeComplete() {
     $('#sched-complete-mask').hidden = true;
     state.completeOrder = null;
   }
+  /* 批次号 = 物料编码 + '-' + 投料日期(YYYYMMDD) + 班组字母 */
   function suggestBatch(code, date, team) {
     var d = String(date || todayStr()).replace(/-/g, '');
     var t = String(team || '').trim().toUpperCase();
-    return String(code || '') + '-' + d + (t ? '-' + t : '');
+    return String(code || '') + '-' + d + t;
   }
   function saveComplete() {
     var o = state.completeOrder;
@@ -1189,6 +1245,12 @@
     DB.put('prodorder', rec)
       .then(function () { if (outRow) return DB.put('output', outRow); })
       .then(function () {
+        /* 完工：从计划补货数量中扣除本单计划值（≤0 自动置空）；仅新逻辑生成的订单 */
+        if (!o.已记计划补货) return;
+        return adjustReplenish(o.物料编码, -(+o.计划数量 || 0), '订单完工 ' + (o.订单号 || ''));
+      })
+      .then(syncAppData)
+      .then(function () {
         return DB.log({ 操作类型: '生产订单完工', 详情: { 订单号: o.订单号, 物料编码: o.物料编码, 完工数量: qty, 批次号: batch, 班组: team, 生产日期: date, 自动写入产出: !!outRow } });
       })
       .then(function () { return loadAll(); })
@@ -1198,6 +1260,43 @@
         toast('完工已保存，批次号 ' + batch + (outRow ? '；已写入实际产出' : '（未写产出：缺工段编号）'), 'ok');
       })
       .catch(function (e) { toast('完工保存失败：' + (e.message || e), 'err'); });
+  }
+
+  /* 删除订单（取消生产）：删订单 + 排产任务回退为建议 + 扣回计划补货数量 */
+  function deleteCompleteOrder() {
+    var o = state.completeOrder;
+    if (!o) return;
+    if (o.状态 !== '待生产') { toast('已完工订单不允许删除', 'err'); return; }
+    var tip = '确认删除订单 ' + (o.订单号 || '') + '？\n\n删除后将：\n· 该订单不再生产\n'
+      + '· 对应排产任务回到「建议」状态\n· 计划补货数量扣回 ' + fmtNum(o.计划数量 || 0) + ' 箱';
+    if (!window.confirm(tip)) return;
+    DB.del('prodorder', o.id)
+      .then(function () {
+        if (!o.已记计划补货) return;
+        return adjustReplenish(o.物料编码, -(+o.计划数量 || 0), '删除订单 ' + (o.订单号 || ''));
+      })
+      .then(function () { return DB.get('schedule', [o.排产日期, o.物料编码]); })
+      .then(function (row) {
+        if (!row) return;
+        row.状态 = '建议';
+        row.确认人 = '';
+        row.确认时间 = '';
+        return DB.put('schedule', row);
+      })
+      .then(syncAppData)
+      .then(function () {
+        return DB.log({
+          操作类型: '生产订单删除',
+          详情: { 订单号: o.订单号, 物料编码: o.物料编码, 计划数量: o.计划数量, 排产日期: o.排产日期, 说明: '取消生产' }
+        });
+      })
+      .then(function () { return loadAll(); })
+      .then(function () {
+        refresh();
+        closeComplete();
+        toast('订单已删除，排产任务已恢复为建议', 'ok');
+      })
+      .catch(function (e) { toast('删除失败：' + (e.message || e), 'err'); });
   }
 
   /* ---------------- 库存批次构成（先进先出，最新批次倒推） ---------------- */
@@ -1819,6 +1918,10 @@
       if (!info.line) { toast('该物料未映射生产线', 'err'); return; }
       var labor = laborOf(code);
       if (labor.missing) { toast('无法排产：' + labor.missing, 'err'); return; }
+      var unitHours = +labor.unitHours || 0;
+      if (!unitHours) { toast('无法排产：默认工段产能为 0', 'err'); return; }
+      /* 换线清场 + 领料（分钟→小时），与自动排产同口径 */
+      var setupHours = ((state.cfg.incChange ? +labor.change || 0 : 0) + (state.cfg.incPick ? +labor.pick || 0 : 0)) / 60;
       var list = (state.dayTasks[date] = state.dayTasks[date] || {});
       (list[info.line] = list[info.line] || []);
       /* 检查当天是否已有该 SKU */
@@ -1826,22 +1929,23 @@
       if (exist) {
         toast('当天已有该产品排产，已合并数量', 'warn');
         exist.qty = (exist.qty || 0) + qty;
-        var r = state.demand.filter(function (x) { return x.code === code; })[0];
-        if (r) {
-          exist.hours = exist.qty * r.unitHours + (exist.firstChunk ? r.setupHours : 0);
-          state.used[date + '|' + info.line] = (state.used[date + '|' + info.line] || 0) + exist.hours - ((exist._prevHours) || 0);
-          exist._prevHours = exist.hours;
-        }
+        exist.unitHours = exist.unitHours || unitHours;
+        if (exist.setupHours == null) exist.setupHours = setupHours;
+        exist.hours = round2(exist.qty * exist.unitHours + exist.setupHours);
       } else {
-        var hours = qty * labor.unitHours + labor.setupHours;
         (list[info.line] = list[info.line] || []).push({
-          date: date, line: info.line, code: code, qty: qty, hours: hours,
+          date: date, line: info.line, code: code, qty: qty,
+          hours: round2(qty * unitHours + setupHours),
+          unitHours: unitHours, setupHours: setupHours,
           priority: 9, source: '手动补充', sectionCode: info.sectionCode,
           sectionName: info.sectionName, deviceType: info.deviceType,
           status: '建议', name: (state.matMap[code] || {}).物料名称 || ''
         });
-        state.used[date + '|' + info.line] = (state.used[date + '|' + info.line] || 0) + hours;
       }
+      /* 重算该日该产线已用产能 */
+      state.used[date + '|' + info.line] = list[info.line].reduce(function (s, t) {
+        return s + (+t.hours || 0);
+      }, 0);
       toast('已添加 ' + code + ' ' + qty + ' 箱到 ' + date, 'ok');
       renderKpi(); renderDemand(); renderSuggestions(); renderDay();
     }
@@ -1872,15 +1976,16 @@
     $('#sched-complete-close').addEventListener('click', closeComplete);
     $('#sched-complete-cancel').addEventListener('click', closeComplete);
     $('#sched-complete-save').addEventListener('click', saveComplete);
+    $('#sched-complete-delete').addEventListener('click', deleteCompleteOrder);
     $('#sched-complete-mask').addEventListener('click', function (e) {
       if (e.target === this) closeComplete();
     });
     function syncBatch() {
       var o = state.completeOrder;
       if (!o || state.batchDirty) return;
-      $('#sc-batch').value = suggestBatch(o.物料编码, $('#sc-date').value, $('#sc-team').value);
+      /* 日期部分固定用投料日期，仅班组字母变化时重算 */
+      $('#sc-batch').value = suggestBatch(o.物料编码, state.batchBaseDate, $('#sc-team').value);
     }
-    $('#sc-date').addEventListener('change', syncBatch);
     $('#sc-team').addEventListener('input', syncBatch);
     $('#sc-batch').addEventListener('input', function () { state.batchDirty = true; });
 
