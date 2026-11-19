@@ -93,6 +93,45 @@
     return state.capacities.find(function (c) { return c.产品形态 === form && c.工段编号 === secNo; });
   }
 
+  /* ---------------- 系统参考值：按实际产出反算每小时产量 ----------------
+   * 仅作为人工维护「借鉴值」的参考，不写库、不覆盖任何字段。
+   * 口径：
+   *   1) 近 30 天的人工录入记录（排除生产订单完工自动写入的，其生产时间按计划倒算，会自证循环）
+   *   2) 生产时间 > 0，且换产清洗次数 = 0（有换产的工时被稀释，速率偏低）
+   *   3) 加权平均 = Σ产出数量 ÷ Σ生产时间
+   *   4) 至少 2 条记录且累计工时 ≥ 2 小时才输出，避免单条异常值
+   *   5) 借鉴值/实测值单位为 kg 时不输出（产出按箱统计，无法换算） */
+  var REF_DAYS = 30;
+  function daysAgoStr(n) {
+    var d = new Date();
+    d.setDate(d.getDate() - n);
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+  function refRateOf(form, secNo) {
+    var cap = findCapacity(form, secNo);
+    var raw = cap ? (cap.借鉴值 || cap.实测值 || '') : '';
+    if (/kg|公斤|千克/i.test(String(raw))) return null;
+    var from = daysAgoStr(REF_DAYS);
+    var base = String(form || '').split('-')[0];
+    var rows = state.outputs.filter(function (o) {
+      if (!o.日期 || o.日期 < from) return false;
+      if (o.工段编号 !== secNo) return false;
+      if (!(+o.生产时间 > 0)) return false;
+      if (+(o.换产清洗次数 || 0) > 0) return false;
+      if (/^生产订单完工自动写入/.test(String(o.备注 || ''))) return false;
+      var f = String(o.产品形态 || '');
+      return f === form || (f.indexOf('-') < 0 && f === base);
+    });
+    var qty = 0, hrs = 0;
+    rows.forEach(function (o) { qty += (+o.产出数量 || 0); hrs += (+o.生产时间 || 0); });
+    if (rows.length < 2 || hrs < 2) return null;
+    return {
+      rate: Math.round((qty / hrs) * 10) / 10,
+      qty: qty, hours: Math.round(hrs * 10) / 10,
+      count: rows.length, days: REF_DAYS
+    };
+  }
+
   /* ============================================================
    * 1. 工段线体档案
    * ============================================================ */
@@ -271,6 +310,10 @@
         var cap = findCapacity(f, s.工段编号);
         var refV = cap && cap.借鉴值 != null && cap.借鉴值 !== '' ? esc(cap.借鉴值) : '—';
         var actV = cap && cap.实测值 != null && cap.实测值 !== '' ? esc(cap.实测值) : '—';
+        var auto = refRateOf(f, s.工段编号);
+        var autoHtml = auto
+          ? '<div class="cap-ref-auto" title="近' + auto.days + '天 ' + auto.count + ' 条人工产出记录，合计 ' + auto.qty + ' 箱 / ' + auto.hours + ' 小时">参考 ' + auto.rate + '箱/h</div>'
+          : '';
         // 副行摘要：领料 / 调试换线清场 / 设备
         var meta = [];
         if (cap && cap.领料时间 != null) meta.push('领料 ' + cap.领料时间 + 'm');
@@ -281,6 +324,7 @@
           + 'data-form="' + esc(f) + '" data-section="' + esc(s.工段编号) + '" title="双击编辑">'
           + '<div class="cap-ref">借鉴 ' + refV + '</div>'
           + '<div class="cap-act">实测 ' + actV + '</div>'
+          + autoHtml
           + metaHtml
           + '</td>';
       });
@@ -302,9 +346,12 @@
     var curChangeover = cap.调试换线清场时间 == null ? '' : cap.调试换线清场时间;
     var curDevice = cap.设备类型 || '';
     var curRemark = cap.备注 || '';
+    var auto = refRateOf(form, sec);
     cell.innerHTML = '<div class="cell-edit-form">'
       + '<label>借鉴值（每小时产量，可带单位） <input type="text" class="cell-ref" value="' + esc(curRef) + '" maxlength="30" placeholder="如 50箱/h 或 100kg/h"></label>'
       + '<label>实测值（每小时产量，可带单位） <input type="text" class="cell-act" value="' + esc(curAct) + '" maxlength="30" placeholder="如 48箱/h"></label>'
+      + (auto ? '<div class="cell-auto-ref">系统参考：<b>' + auto.rate + ' 箱/h</b>（近 ' + auto.days + ' 天 ' + auto.count + ' 条人工产出，合计 ' + auto.qty + ' 箱 / ' + auto.hours + ' 小时）'
+        + ' <button class="btn btn-sm cell-use-auto" type="button">采用为借鉴值</button></div>' : '')
       + '<label>领料时间(分钟) <input type="number" min="0" step="1" class="cell-pick" value="' + curPick + '"></label>'
       + '<label>调试换线/清场时间(分钟) <input type="number" min="0" step="1" class="cell-changeover" value="' + curChangeover + '"></label>'
       + '<label>设备组 <input type="text" class="cell-device" value="' + esc(curDevice) + '" maxlength="40" placeholder="如 机器包装 / 人工包装"></label>'
@@ -316,6 +363,12 @@
       + '</div></div>';
     $('.cell-save', cell).onclick = function () { saveCell(form, sec, cap, cell); };
     $('.cell-cancel', cell).onclick = function () { renderMatrix(); };
+    var useAuto = $('.cell-use-auto', cell);
+    if (useAuto) useAuto.onclick = function () {
+      $('.cell-ref', cell).value = auto.rate + '箱/h';
+      this.textContent = '已填入，记得保存';
+      this.disabled = true;
+    };
     var clr = $('.cell-clear', cell);
     if (clr) clr.onclick = function () {
       if (!confirm('清空此单元格的产能数据？')) return;
