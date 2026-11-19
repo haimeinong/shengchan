@@ -831,7 +831,7 @@
               <table class="grid" id="sched-order-table">
                 <thead><tr>
                   <th>订单号</th><th>排产日期</th><th>产线</th><th>物料编码</th><th>物料名称</th>
-                  <th class="num">计划(箱)</th><th class="num">完工(箱)</th><th>批次号</th><th>班组</th><th>生产日期</th><th>状态</th><th>操作</th>
+                  <th class="num">计划(箱)</th><th class="num">完工(箱)</th><th>批次号</th><th>班组</th><th>生产日期</th><th>投料日期</th><th>状态</th><th>操作</th>
                 </tr></thead>
                 <tbody></tbody>
               </table>
@@ -1047,10 +1047,10 @@
   </div>
 </div>
 
-<!-- 生产订单完工录入（批次号追踪） -->
+<!-- 生产订单完工录入 / 编辑（批次号追踪） -->
 <div class="modal-mask" id="sched-complete-mask" hidden>
   <div class="modal">
-    <div class="modal-head"><h3>生产订单完工</h3><button class="btn btn-ghost" id="sched-complete-close">✕</button></div>
+    <div class="modal-head"><h3><span id="sc-mode-tag">完工录入</span></h3><button class="btn btn-ghost" id="sched-complete-close">✕</button></div>
     <div class="modal-body">
       <div class="mat-form">
         <label>订单号<input type="text" id="sc-order-no" readonly></label>
@@ -1058,7 +1058,7 @@
         <label>计划数量(箱)<input type="text" id="sc-plan" readonly></label>
         <label>完工数量(箱)*<input type="number" id="sc-qty" min="0" step="1"></label>
         <label>完工日期*<input type="date" id="sc-date"></label>
-        <label>投料日期<input type="text" id="sc-invest-date" readonly></label>
+        <label>投料日期*<input type="date" id="sc-invest-date"></label>
         <label>班组（大写字母）<input type="text" id="sc-team" maxlength="2" placeholder="如 A"></label>
         <label>批次号*<input type="text" id="sc-batch" maxlength="60" placeholder="物料编码+投料日期+班组"></label>
         <label>备注<input type="text" id="sc-remark" maxlength="80"></label>
@@ -1083,12 +1083,12 @@
 <script src="assets/js/replenish.js?v=20261114a"></script>
 <script src="assets/js/plan.js?v=20261118a"></script>
 <script src="assets/js/semidemand.js?v=20261020b"></script>
-<script src="assets/js/schedule.js?v=20261119j"></script>
+<script src="assets/js/schedule.js?v=20261119m"></script>
 <script src="assets/js/app.js?v=20261119b"></script>
 <script>
 /* 版本自检：页面与脚本版本不一致时给出明确提示（常见于 JS 未上传或浏览器缓存旧脚本） */
 window.addEventListener('load', function () {
-  var EXPECT = '20261119j';
+  var EXPECT = '20261119m';
   var got = window.SCHED_BUILD || '';
   if (got === EXPECT) return;
   console.error('[版本不一致] 期望 schedule.js ' + EXPECT + '，实际 ' + (got || '未定义'));
