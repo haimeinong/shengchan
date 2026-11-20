@@ -11,7 +11,7 @@
   'use strict';
 
   /* 构建标识：与 index.html 中 schedule.js?v= 保持一致，便于排查"页面已更新但脚本仍是旧缓存"的问题 */
-  global.SCHED_BUILD = '20261119m';
+  global.SCHED_BUILD = '20261120a';
   try { console.info('[排产] schedule.js 构建 ' + global.SCHED_BUILD); } catch (e) {}
 
   /* ---------------- 通用工具 ---------------- */
@@ -836,7 +836,7 @@
     if (!tb) return;
     var dates = state.dates || [];
     if (!dates.length || !state.dayTab) {
-      tb.innerHTML = '<tr><td colspan="10" class="empty">暂无排产建议，请先点「生成/刷新排产建议」</td></tr>';
+      tb.innerHTML = '<tr><td colspan="11" class="empty">暂无排产建议，请先点「生成/刷新排产建议」</td></tr>';
       if (foot) foot.innerHTML = '';
       return;
     }
@@ -847,7 +847,7 @@
     });
     all.sort(function (a, b) { return (a.priority || 9) - (b.priority || 9); });
     if (!all.length) {
-      tb.innerHTML = '<tr><td colspan="10" class="empty">' + state.dayTab + ' 暂无推荐排产 · 可点下方「手动补充产品」</td></tr>';
+      tb.innerHTML = '<tr><td colspan="11" class="empty">' + state.dayTab + ' 暂无推荐排产 · 可点下方「手动补充产品」</td></tr>';
       if (foot) foot.innerHTML = '';
       return;
     }
@@ -864,6 +864,7 @@
         + '<td>' + esc(nm) + '</td>'
         + '<td>' + esc(t.sectionCode || info.sectionCode || '—') + (t.sectionName || info.sectionName ? ' <span class="muted">' + esc(t.sectionName || info.sectionName) + '</span>' : '') + '</td>'
         + '<td>' + esc(t.deviceType || info.deviceType || '手工生产组') + '</td>'
+        + '<td class="num">' + fmtNum(stockOf(t.code)) + '</td>'
         + '<td class="num">'
           + (editable
             ? '<button class="btn btn-sm sched-qty-minus" data-code="' + esc(t.code) + '" data-qty="' + qtyDisp + '" data-date="' + esc(t.date) + '" title="减少">-</button>'
