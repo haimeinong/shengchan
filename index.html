@@ -795,7 +795,7 @@
               <table class="grid" id="sched-suggest-table">
                 <thead><tr>
                   <th class="num">序</th><th class="code">物料编码</th><th>物料名称</th>
-                  <th>工段</th><th>设备组</th><th class="num">计划数量(箱)</th>
+                  <th>工段</th><th>设备组</th><th class="num">库存数量</th><th class="num">计划数量(箱)</th>
                   <th class="num">工时(h)</th><th>优先级</th><th>状态</th><th>操作</th>
                 </tr></thead>
                 <tbody></tbody>
@@ -1083,12 +1083,12 @@
 <script src="assets/js/replenish.js?v=20261114a"></script>
 <script src="assets/js/plan.js?v=20261118a"></script>
 <script src="assets/js/semidemand.js?v=20261020b"></script>
-<script src="assets/js/schedule.js?v=20261119m"></script>
+<script src="assets/js/schedule.js?v=20261120a"></script>
 <script src="assets/js/app.js?v=20261119b"></script>
 <script>
 /* 版本自检：页面与脚本版本不一致时给出明确提示（常见于 JS 未上传或浏览器缓存旧脚本） */
 window.addEventListener('load', function () {
-  var EXPECT = '20261119m';
+  var EXPECT = '20261120a';
   var got = window.SCHED_BUILD || '';
   if (got === EXPECT) return;
   console.error('[版本不一致] 期望 schedule.js ' + EXPECT + '，实际 ' + (got || '未定义'));
